@@ -1,6 +1,6 @@
 #import "OakDocumentView.h"
 #import "GutterView.h"
-#import "OTVStatusBar.h"
+// OTVStatusBar replaced by SwiftUI StatusBarView (via StatusBarViewModel)
 #import <document/OakDocument.h>
 #import <file/type.h>
 #import <text/ctype.h>
@@ -23,15 +23,11 @@
 static NSString* const kUserDefaultsLineNumberScaleFactorKey = @"lineNumberScaleFactor";
 static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontName";
 
-static NSString* const kBookmarksColumnIdentifier = @"bookmarks";
-static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 
-@interface OakDocumentView () <NSAccessibilityGroup, GutterViewDelegate, GutterViewColumnDataSource, GutterViewColumnDelegate, OTVStatusBarDelegate>
+@interface OakDocumentView () <NSAccessibilityGroup, GutterViewDelegate>
 {
 	NSScrollView* gutterScrollView;
 	GutterView* gutterView;
-	NSMutableDictionary* gutterImages;
-
 	OakBackgroundFillView* gutterDividerView;
 
 	NSScrollView* textScrollView;
@@ -39,9 +35,11 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 	NSMutableArray* topAuxiliaryViews;
 	NSMutableArray* bottomAuxiliaryViews;
 
+	NSObject* statusBarModel;
+
 	IBOutlet NSPanel* tabSizeSelectorPanel;
 }
-@property (nonatomic, readonly) OTVStatusBar* statusBar;
+@property (nonatomic, readonly) NSView* statusBar;
 @property (nonatomic) SymbolChooser* symbolChooser;
 @property (nonatomic) NSArray* observedKeys;
 - (void)updateStyle;
@@ -69,8 +67,7 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 		gutterView = [[GutterView alloc] initWithFrame:NSZeroRect];
 		gutterView.partnerView = _textView;
 		gutterView.delegate    = self;
-		[gutterView insertColumnWithIdentifier:kBookmarksColumnIdentifier atPosition:0 dataSource:self delegate:self];
-		[gutterView insertColumnWithIdentifier:kFoldingsColumnIdentifier atPosition:2 dataSource:self delegate:self];
+		// Only line numbers — bookmarks and folding columns removed
 		if([NSUserDefaults.standardUserDefaults boolForKey:@"DocumentView Disable Line Numbers"])
 			[gutterView setVisibility:NO forColumnWithIdentifier:GVLineNumbersColumnIdentifier];
 		[gutterView setTranslatesAutoresizingMaskIntoConstraints:NO];
@@ -78,6 +75,8 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 		gutterScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
 		gutterScrollView.accessibilityElement = NO;
 		gutterScrollView.borderType   = NSNoBorder;
+		gutterScrollView.wantsLayer   = YES;
+		gutterScrollView.canDrawSubviewsIntoLayer = YES;
 		gutterScrollView.documentView = gutterView;
 
 		[gutterScrollView.contentView addConstraint:[NSLayoutConstraint constraintWithItem:gutterView attribute:NSLayoutAttributeLeft relatedBy:NSLayoutRelationEqual toItem:gutterScrollView.contentView attribute:NSLayoutAttributeLeft multiplier:1.0 constant:0.0]];
@@ -86,9 +85,10 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 
 		gutterDividerView = OakCreateVerticalLine(OakBackgroundFillViewStyleNone);
 
-		_statusBar = [[OTVStatusBar alloc] initWithFrame:NSZeroRect];
-		_statusBar.delegate = self;
-		_statusBar.target = self;
+		statusBarModel = [[NSClassFromString(@"StatusBarViewModel") alloc] init];
+		[statusBarModel setValue:self forKey:@"delegate"];
+		[statusBarModel setValue:self forKey:@"target"];
+		_statusBar = [statusBarModel valueForKey:@"hostingView"];
 
 		OakAddAutoLayoutViewsToSuperview(@[ gutterScrollView, gutterDividerView, textScrollView, _statusBar ], self);
 		OakSetupKeyViewLoop(@[ self, _textView, _statusBar ]);
@@ -142,17 +142,31 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 	if(_hideStatusBar)
 	{
 		[_statusBar removeFromSuperview];
-		_statusBar.delegate = nil;
-		_statusBar.target = nil;
+		statusBarModel = nil;
 		_statusBar = nil;
 	}
 	else
 	{
-		_statusBar = [[OTVStatusBar alloc] initWithFrame:NSZeroRect];
-		_statusBar.delegate = self;
-		_statusBar.target = self;
+		statusBarModel = [[NSClassFromString(@"StatusBarViewModel") alloc] init];
+		[statusBarModel setValue:self forKey:@"delegate"];
+		[statusBarModel setValue:self forKey:@"target"];
+		_statusBar = [statusBarModel valueForKey:@"hostingView"];
 
 		OakAddAutoLayoutViewsToSuperview(@[ _statusBar ], self);
+
+		// Restore current property values
+		[statusBarModel setValue:[_textView valueForKey:@"selectionString"] forKey:@"selectionString"];
+		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
+		[statusBarModel setValue:@(_textView.isRecordingMacro) forKey:@"recordingMacro"];
+		if(self.document)
+		{
+			NSString* fileType = self.document.fileType;
+			[statusBarModel setValue:fileType forKey:@"fileType"];
+			for(auto const& item : bundles::query(bundles::kFieldGrammarScope, to_s(fileType)))
+				[statusBarModel setValue:[NSString stringWithCxxString:item->name()] forKey:@"grammarName"];
+			[statusBarModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
+			[statusBarModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
+		}
 	}
 	[self setNeedsUpdateConstraints:YES];
 }
@@ -162,51 +176,11 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 	return round(std::min(1.5 * [_textView.font capHeight], [_textView.font ascender] - [_textView.font descender] + [_textView.font leading]));
 }
 
-- (NSImage*)gutterImage:(NSString*)aName
-{
-	id res = gutterImages[aName];
-	if(!res)
-	{
-		gutterImages = gutterImages ?: [NSMutableDictionary new];
-
-		NSImage* image = [aName hasPrefix:@"/"] ? [[NSImage alloc] initWithContentsOfFile:aName] : [NSImage imageNamed:aName inSameBundleAsClass:[self class]];
-		if(!image && ![aName hasPrefix:@"/"] && ![aName hasSuffix:@" Template"])
-			image = [NSImage imageNamed:[aName stringByAppendingString:@" Template"] inSameBundleAsClass:[self class]];
-
-		if([aName hasPrefix:@"/"] && [[aName stringByDeletingPathExtension] hasSuffix:@" Template"])
-			[image setTemplate:YES];
-
-		if(image)
-		{
-			CGFloat imageWidth  = image.size.width;
-			CGFloat imageHeight = image.size.height;
-
-			CGFloat viewWidth   = [self widthForColumnWithIdentifier:nil];
-			CGFloat viewHeight  = self.lineHeight;
-
-			res = image = [image copy];
-
-			if(imageWidth / imageHeight < viewWidth / viewHeight)
-					image.size = NSMakeSize(round(viewHeight * imageWidth / imageHeight), viewHeight);
-			else	image.size = NSMakeSize(viewWidth, round(viewWidth * imageHeight / imageWidth));
-		}
-		else
-		{
-			res = [NSNull null];
-			NSLog(@"%s no image named ‘%@’", sel_getName(_cmd), aName);
-		}
-
-		gutterImages[aName] = res;
-	}
-	return res == [NSNull null] ? nil : res;
-}
-
 - (void)updateGutterViewFont:(id)sender
 {
 	CGFloat const scaleFactor = [NSUserDefaults.standardUserDefaults floatForKey:kUserDefaultsLineNumberScaleFactorKey] ?: 0.8;
 	NSString* lineNumberFontName = [NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsLineNumberFontNameKey] ?: [_textView.font fontName];
 
-	gutterImages = nil; // force image sizes to be recalculated
 	gutterView.lineNumberFont = [NSFont fontWithName:lineNumberFontName size:round(scaleFactor * [_textView.font pointSize] * _textView.fontScaleFactor)];
 	[gutterView reloadData:self];
 }
@@ -251,28 +225,31 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 	{
 		NSString* str = [_textView valueForKey:@"selectionString"];
 		[gutterView setHighlightedRange:to_s(str ?: @"1")];
-		[_statusBar setSelectionString:str];
+		[statusBarModel setValue:str forKey:@"selectionString"];
 		_symbolChooser.selectionString = str;
 	}
 	else if([aKeyPath isEqualToString:@"symbol"])
 	{
-		_statusBar.symbolName = _textView.symbol;
+		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
 	}
 	else if([aKeyPath isEqualToString:@"recordingMacro"])
 	{
-		_statusBar.recordingMacro = _textView.isRecordingMacro;
+		[statusBarModel setValue:@(_textView.isRecordingMacro) forKey:@"recordingMacro"];
 	}
 	else if([aKeyPath isEqualToString:@"fileType"])
 	{
-		_statusBar.fileType = self.document.fileType;
+		NSString* fileType = self.document.fileType;
+		[statusBarModel setValue:fileType forKey:@"fileType"];
+		for(auto const& item : bundles::query(bundles::kFieldGrammarScope, to_s(fileType)))
+			[statusBarModel setValue:[NSString stringWithCxxString:item->name()] forKey:@"grammarName"];
 	}
 	else if([aKeyPath isEqualToString:@"tabSize"])
 	{
-		_statusBar.tabSize = self.document.tabSize;
+		[statusBarModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
 	}
 	else if([aKeyPath isEqualToString:@"softTabs"])
 	{
-		_statusBar.softTabs = self.document.softTabs;
+		[statusBarModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
 	}
 	else if([aKeyPath isEqualToString:@"themeUUID"])
 	{
@@ -568,10 +545,11 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 
 - (void)showBundlesMenu:(id)sender
 {
-	if(!self.statusBar)
-		return NSBeep();
-
-	[NSApp sendAction:_cmd to:self.statusBar from:self];
+	NSPopUpButton* popup = [statusBarModel valueForKey:@"bundleItemsPopUp"];
+	if(popup)
+		[popup performClick:self];
+	else
+		NSBeep();
 }
 
 - (void)showBundleItemSelector:(NSPopUpButton*)bundleItemsPopUp
@@ -656,135 +634,6 @@ static NSString* const kFoldingsColumnIdentifier  = @"foldings";
 - (GVLineRecord)lineRecordForPosition:(CGFloat)yPos                              { return [_textView lineRecordForPosition:yPos];               }
 - (GVLineRecord)lineFragmentForLine:(NSUInteger)aLine column:(NSUInteger)aColumn { return [_textView lineFragmentForLine:aLine column:aColumn]; }
 
-// =========================
-// = GutterView DataSource =
-// =========================
-
-- (CGFloat)widthForColumnWithIdentifier:(id)columnIdentifier
-{
-	return floor((self.lineHeight-1) / 2) * 2 + 1;
-}
-
-- (NSImage*)imageForLine:(NSUInteger)lineNumber inColumnWithIdentifier:(id)columnIdentifier state:(GutterViewRowState)rowState
-{
-	if([columnIdentifier isEqualToString:kBookmarksColumnIdentifier])
-	{
-		__block std::map<size_t, NSString*> gutterImageName;
-
-		[self.document enumerateBookmarksAtLine:lineNumber block:^(text::pos_t const& pos, NSString* type, NSString* payload){
-			if(payload.length != 0)
-				gutterImageName.emplace(0, type);
-			else if([type isEqualToString:OakDocumentBookmarkIdentifier])
-				gutterImageName.emplace(1, rowState != GutterViewRowStateRegular ? @"Bookmark Hover Remove Template" : @"Bookmark Template");
-			else if(rowState == GutterViewRowStateRegular)
-				gutterImageName.emplace(2, type);
-		}];
-
-		if(rowState != GutterViewRowStateRegular)
-			gutterImageName.emplace(3, @"Bookmark Hover Add Template");
-
-		if(!gutterImageName.empty())
-			return [self gutterImage:gutterImageName.begin()->second];
-	}
-	else if([columnIdentifier isEqualToString:kFoldingsColumnIdentifier])
-	{
-		switch([_textView foldingStateForLine:lineNumber])
-		{
-			case kFoldingTop:       return [self gutterImage:rowState == GutterViewRowStateRegular ? @"Folding Top Template"       : @"Folding Top Hover Template"];
-			case kFoldingCollapsed: return [self gutterImage:rowState == GutterViewRowStateRegular ? @"Folding Collapsed Template" : @"Folding Collapsed Hover Template"];
-			case kFoldingBottom:    return [self gutterImage:rowState == GutterViewRowStateRegular ? @"Folding Bottom Template"    : @"Folding Bottom Hover Template"];
-		}
-	}
-	return nil;
-}
-
-// =============================
-// = Bookmark Submenu Delegate =
-// =============================
-
-- (void)takeBookmarkFrom:(id)sender
-{
-	if([sender respondsToSelector:@selector(representedObject)])
-		[self selectAndCenter:[sender representedObject]];
-}
-
-- (void)updateBookmarksMenu:(NSMenu*)aMenu
-{
-	[self.document enumerateBookmarksUsingBlock:^(text::pos_t const& pos, NSString* excerpt){
-		NSString* prefix = to_ns(text::pad(pos.line+1, 4) + ": ");
-		NSMenuItem* item = [aMenu addItemWithTitle:[prefix stringByAppendingString:excerpt] action:@selector(takeBookmarkFrom:) keyEquivalent:@""];
-		[item setRepresentedObject:to_ns(pos)];
-	}];
-
-	BOOL hasBookmarks = aMenu.numberOfItems;
-	if(hasBookmarks)
-		[aMenu addItem:[NSMenuItem separatorItem]];
-	[aMenu addItemWithTitle:@"Clear Bookmarks" action:hasBookmarks ? @selector(clearAllBookmarks:) : @selector(nop:) keyEquivalent:@""];
-}
-
-// =======================
-// = GutterView Delegate =
-// =======================
-
-- (void)userDidClickColumnWithIdentifier:(id)columnIdentifier atLine:(NSUInteger)lineNumber
-{
-	if([columnIdentifier isEqualToString:kBookmarksColumnIdentifier])
-	{
-		__block std::vector<text::pos_t> bookmarks;
-		__block NSMutableArray* content = [NSMutableArray array];
-
-		[self.document enumerateBookmarksAtLine:lineNumber block:^(text::pos_t const& pos, NSString* type, NSString* payload){
-			if(payload.length != 0)
-				[content addObject:payload];
-			else if([type isEqualToString:OakDocumentBookmarkIdentifier])
-				bookmarks.push_back(pos);
-		}];
-
-		if(content.count == 0)
-		{
-			if(bookmarks.empty())
-					[self.document setMarkOfType:OakDocumentBookmarkIdentifier atPosition:text::pos_t(lineNumber, 0) content:nil];
-			else	[self.document removeMarkOfType:OakDocumentBookmarkIdentifier atPosition:bookmarks.front()];
-		}
-		else
-		{
-			NSView* popoverContainerView = [[NSView alloc] initWithFrame:NSZeroRect];
-
-			NSTextField* textField = OakCreateLabel([content componentsJoinedByString:@"\n"]);
-			OakAddAutoLayoutViewsToSuperview(@[ textField ], popoverContainerView);
-
-			NSDictionary* views = NSDictionaryOfVariableBindings(textField);
-			[popoverContainerView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-(5)-[textField]-(5)-|" options:0 metrics:0 views:views]];
-			[popoverContainerView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-(10)-[textField]-(10)-|" options:0 metrics:0 views:views]];
-
-			NSViewController* viewController = [NSViewController new];
-			viewController.view = popoverContainerView;
-
-			NSPopover* popover = [NSPopover new];
-			popover.behavior = NSPopoverBehaviorTransient;
-			popover.contentViewController = viewController;
-
-			GVLineRecord record = [self lineFragmentForLine:lineNumber column:0];
-			NSRect rect = NSMakeRect(0, record.firstY, [self widthForColumnWithIdentifier:columnIdentifier], record.lastY - record.firstY);
-			[popover showRelativeToRect:rect ofView:gutterView preferredEdge:NSMaxXEdge];
-		}
-	}
-	else if([columnIdentifier isEqualToString:kFoldingsColumnIdentifier])
-	{
-		[_textView toggleFoldingAtLine:lineNumber recursive:OakIsAlternateKeyOrMouseEvent()];
-		[NSNotificationCenter.defaultCenter postNotificationName:GVColumnDataSourceDidChange object:self];
-	}
-}
-
-- (void)clearAllBookmarks:(id)sender
-{
-	[self.document removeAllMarksOfType:OakDocumentBookmarkIdentifier];
-}
-
-- (void)documentMarksDidChange:(NSNotification*)aNotification
-{
-	[NSNotificationCenter.defaultCenter postNotificationName:GVColumnDataSourceDidChange object:self];
-}
 
 // ============
 // = Printing =

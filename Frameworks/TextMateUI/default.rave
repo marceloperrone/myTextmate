@@ -1,0 +1,6 @@
+target "${dirname}" {
+	require TextMateBridge
+	sources Sources/TextMateUI/**/*.swift
+	swift_bridging_header ${dir}/src/TextMateUI-Bridging-Header.h
+	frameworks Cocoa SwiftUI
+}

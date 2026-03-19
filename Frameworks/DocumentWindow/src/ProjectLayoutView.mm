@@ -5,13 +5,10 @@
 #import <oak/misc.h>
 #import <oak/debug.h>
 
-NSString* const kUserDefaultsFileBrowserWidthKey = @"fileBrowserWidth";
 NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 @interface ProjectLayoutView () <OakUserDefaultsObserver>
-@property (nonatomic) NSView* fileBrowserDivider;
 @property (nonatomic) NSView* htmlOutputDivider;
-@property (nonatomic) NSLayoutConstraint* fileBrowserWidthConstraint;
 @property (nonatomic) NSLayoutConstraint* htmlOutputSizeConstraint;
 @property (nonatomic) NSMutableArray* myConstraints;
 @property (nonatomic) BOOL mouseDownRecursionGuard;
@@ -21,7 +18,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 + (void)initialize
 {
 	[NSUserDefaults.standardUserDefaults registerDefaults:@{
-		kUserDefaultsFileBrowserWidthKey: @250,
 		kUserDefaultsHTMLOutputSizeKey:   NSStringFromSize(NSMakeSize(200, 200))
 	}];
 }
@@ -31,7 +27,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 	if(self = [super initWithFrame:aRect])
 	{
 		_myConstraints    = [NSMutableArray array];
-		_fileBrowserWidth = [NSUserDefaults.standardUserDefaults integerForKey:kUserDefaultsFileBrowserWidthKey];
 		_htmlOutputSize   = NSSizeFromString([NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsHTMLOutputSizeKey]);
 
 		[self userDefaultsDidChange:nil];
@@ -66,7 +61,7 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 - (void)updateKeyViewLoop
 {
 	NSMutableArray<NSView*>* views = [NSMutableArray array];
-	for(NSView* view : { _documentView, _htmlOutputView, _fileBrowserView })
+	for(NSView* view : { _documentView, _htmlOutputView })
 	{
 		if(view)
 			[views addObject:view];
@@ -92,23 +87,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 	[self updateKeyViewLoop];
 }
 
-- (void)setFileBrowserView:(NSView*)aFileBrowserView
-{
-	_fileBrowserDivider = [self replaceView:_fileBrowserDivider withView:aFileBrowserView ? [self createDividerAlongYAxis:YES] : nil];
-	_fileBrowserView    = [self replaceView:_fileBrowserView withView:aFileBrowserView];
-	[self updateKeyViewLoop];
-}
-
-- (void)setFileBrowserOnRight:(BOOL)flag
-{
-	if(_fileBrowserOnRight != flag)
-	{
-		_fileBrowserOnRight = flag;
-		if(_fileBrowserView)
-			[self setNeedsUpdateConstraints:YES];
-	}
-}
-
 - (void)setHtmlOutputOnRight:(BOOL)flag
 {
 	if(_htmlOutputOnRight != flag)
@@ -130,8 +108,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 	NSDictionary* views = @{
 		@"documentView":       _documentView,
-		@"fileBrowserView":    _fileBrowserView    ?: [NSNull null],
-		@"fileBrowserDivider": _fileBrowserDivider ?: [NSNull null],
 		@"htmlOutputView":     _htmlOutputView     ?: [NSNull null],
 		@"htmlOutputDivider":  _htmlOutputDivider  ?: [NSNull null],
 	};
@@ -150,60 +126,13 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 		CONSTRAINT(@"V:[documentView]|", 0);
 
 	// left
-	if(_fileBrowserView && !_fileBrowserOnRight)
-		CONSTRAINT(@"H:[fileBrowserDivider][documentView]", 0);
-	else
-		CONSTRAINT(@"H:|[documentView]", 0);
+	CONSTRAINT(@"H:|[documentView]", 0);
 
 	// right
 	if(_htmlOutputView && _htmlOutputOnRight)
 		CONSTRAINT(@"H:[documentView][htmlOutputDivider]", 0);
-	else if(_fileBrowserView && _fileBrowserOnRight)
-		CONSTRAINT(@"H:[documentView][fileBrowserDivider]", 0);
 	else
 		CONSTRAINT(@"H:[documentView]|", 0);
-
-	// =======================
-	// = Anchor File Browser =
-	// =======================
-
-	if(_fileBrowserView)
-	{
-		// width
-		self.fileBrowserWidthConstraint = [NSLayoutConstraint constraintWithItem:_fileBrowserView attribute:NSLayoutAttributeWidth relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1 constant:_fileBrowserWidth];
-		self.fileBrowserWidthConstraint.priority = NSLayoutPriorityDragThatCannotResizeWindow;
-		[_myConstraints addObject:self.fileBrowserWidthConstraint];
-
-		// top
-		CONSTRAINT(@"V:|[fileBrowserDivider]", 0);
-		CONSTRAINT(@"V:|[fileBrowserView]", 0);
-
-		// bottom
-		if(_htmlOutputView && !_htmlOutputOnRight)
-		{
-			CONSTRAINT(@"V:[fileBrowserView][htmlOutputDivider]", 0);
-			CONSTRAINT(@"V:[fileBrowserDivider][htmlOutputDivider]", 0);
-		}
-		else
-		{
-			CONSTRAINT(@"V:[fileBrowserView]|", 0);
-			CONSTRAINT(@"V:[fileBrowserDivider]|", 0);
-		}
-
-		// left
-		if(_fileBrowserOnRight && _htmlOutputView && _htmlOutputOnRight)
-			CONSTRAINT(@"H:[htmlOutputView][fileBrowserDivider][fileBrowserView]", 0);
-		else if(_fileBrowserOnRight)
-			CONSTRAINT(@"H:[documentView][fileBrowserDivider][fileBrowserView]", 0);
-		else
-			CONSTRAINT(@"H:|[fileBrowserView][fileBrowserDivider]", 0);
-
-		// right
-		if(_fileBrowserOnRight)
-			CONSTRAINT(@"H:[fileBrowserView]|", 0);
-		else
-			CONSTRAINT(@"H:[fileBrowserDivider][documentView]", 0);
-	}
 
 	// ===========================
 	// = Anchor HTML Output View =
@@ -223,10 +152,7 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 			CONSTRAINT(@"V:|[htmlOutputDivider]|", 0);
 
 			// left + right
-			if(_fileBrowserView && _fileBrowserOnRight)
-				CONSTRAINT(@"H:[documentView][htmlOutputDivider][htmlOutputView][fileBrowserDivider]", 0);
-			else
-				CONSTRAINT(@"H:[documentView][htmlOutputDivider][htmlOutputView]|", 0);
+			CONSTRAINT(@"H:[documentView][htmlOutputDivider][htmlOutputView]|", 0);
 		}
 		else
 		{
@@ -245,14 +171,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 #undef CONSTRAINT
 
-- (NSRect)fileBrowserResizeRect
-{
-	if(!_fileBrowserView)
-		return NSZeroRect;
-	NSRect r = _fileBrowserView.frame;
-	return NSMakeRect(_fileBrowserOnRight ? NSMinX(r)-3 : NSMaxX(r)-4, NSMinY(r), 10, NSHeight(r));
-}
-
 - (NSRect)htmlOutputResizeRect
 {
 	if(!_htmlOutputView)
@@ -263,7 +181,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 - (void)resetCursorRects
 {
-	[self addCursorRect:[self fileBrowserResizeRect] cursor:[NSCursor resizeLeftRightCursor]];
 	[self addCursorRect:[self htmlOutputResizeRect]  cursor:_htmlOutputOnRight ? [NSCursor resizeLeftRightCursor] : [NSCursor resizeUpDownCursor]];
 }
 
@@ -274,8 +191,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 - (NSView*)hitTest:(NSPoint)aPoint
 {
-	if(NSMouseInRect([self convertPoint:aPoint fromView:[self superview]], [self fileBrowserResizeRect], [self isFlipped]))
-		return self;
 	if(NSMouseInRect([self convertPoint:aPoint fromView:[self superview]], [self htmlOutputResizeRect], [self isFlipped]))
 		return self;
 	return [super hitTest:aPoint];
@@ -289,9 +204,7 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 
 	NSView* view = nil;
 	NSPoint mouseDownPos = [self convertPoint:[anEvent locationInWindow] fromView:nil];
-	if(NSMouseInRect(mouseDownPos, [self fileBrowserResizeRect], [self isFlipped]))
-		view = _fileBrowserView;
-	else if(NSMouseInRect(mouseDownPos, [self htmlOutputResizeRect], [self isFlipped]))
+	if(NSMouseInRect(mouseDownPos, [self htmlOutputResizeRect], [self isFlipped]))
 		view = _htmlOutputView;
 
 	if(!view || [anEvent type] != NSEventTypeLeftMouseDown)
@@ -300,12 +213,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 	}
 	else
 	{
-		if(_fileBrowserView)
-		{
-			self.fileBrowserWidthConstraint.constant = NSWidth(_fileBrowserView.frame);
-			self.fileBrowserWidthConstraint.priority = NSLayoutPriorityDragThatCannotResizeWindow;
-		}
-
 		if(_htmlOutputView)
 		{
 			if(_htmlOutputOnRight)
@@ -328,33 +235,21 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 			if(!didDrag && hypot(mouseDownPos.x - mouseCurrentPos.x, mouseDownPos.y - mouseCurrentPos.y) < 2.5)
 				continue;
 
-			if(view == _htmlOutputView)
+			if(_htmlOutputOnRight)
 			{
-				if(_htmlOutputOnRight)
-				{
-					CGFloat width = NSWidth(initialFrame) + (mouseCurrentPos.x - mouseDownPos.x) * (_htmlOutputOnRight ? -1 : +1);
-					_htmlOutputSize.width = std::max<CGFloat>(50, round(width));
-					self.htmlOutputSizeConstraint.constant = width;
-				}
-				else
-				{
-					CGFloat height = NSHeight(initialFrame) + (mouseCurrentPos.y - mouseDownPos.y);
-					_htmlOutputSize.height = std::max<CGFloat>(50, round(height));
-					self.htmlOutputSizeConstraint.constant = height;
-				}
-				self.htmlOutputSizeConstraint.priority   = NSLayoutPriorityDragThatCannotResizeWindow-1;
-
-				[NSUserDefaults.standardUserDefaults setObject:NSStringFromSize(_htmlOutputSize) forKey:kUserDefaultsHTMLOutputSizeKey];
+				CGFloat width = NSWidth(initialFrame) + (mouseCurrentPos.x - mouseDownPos.x) * (_htmlOutputOnRight ? -1 : +1);
+				_htmlOutputSize.width = std::max<CGFloat>(50, round(width));
+				self.htmlOutputSizeConstraint.constant = width;
 			}
-			else if(view == _fileBrowserView)
+			else
 			{
-				CGFloat width = NSWidth(initialFrame) + (mouseCurrentPos.x - mouseDownPos.x) * (_fileBrowserOnRight ? -1 : +1);
-				_fileBrowserWidth = std::max<CGFloat>(50, round(width));
-				self.fileBrowserWidthConstraint.constant = _fileBrowserWidth;
-				self.fileBrowserWidthConstraint.priority = NSLayoutPriorityDragThatCannotResizeWindow-1;
-
-				[NSUserDefaults.standardUserDefaults setInteger:_fileBrowserWidth forKey:kUserDefaultsFileBrowserWidthKey];
+				CGFloat height = NSHeight(initialFrame) + (mouseCurrentPos.y - mouseDownPos.y);
+				_htmlOutputSize.height = std::max<CGFloat>(50, round(height));
+				self.htmlOutputSizeConstraint.constant = height;
 			}
+			self.htmlOutputSizeConstraint.priority   = NSLayoutPriorityDragThatCannotResizeWindow-1;
+
+			[NSUserDefaults.standardUserDefaults setObject:NSStringFromSize(_htmlOutputSize) forKey:kUserDefaultsHTMLOutputSizeKey];
 
 			[[self window] invalidateCursorRectsForView:self];
 			didDrag = YES;
@@ -370,7 +265,6 @@ NSString* const kUserDefaultsHTMLOutputSizeKey   = @"htmlOutputSize";
 			}
 		}
 
-		self.fileBrowserWidthConstraint.priority = NSLayoutPriorityDragThatCannotResizeWindow;
 		self.htmlOutputSizeConstraint.priority   = NSLayoutPriorityDragThatCannotResizeWindow-1;
 	}
 

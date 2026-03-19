@@ -37,26 +37,6 @@ extern NSString* const kUserDefaultsDisableTabBarCollapsingKey;
 // = Bundles =
 // ===========
 
-// =============
-// = Variables =
-// =============
-
-extern NSString* const kUserDefaultsEnvironmentVariablesKey;
-
-// ============
-// = Terminal =
-// ============
-
-extern NSString* const kUserDefaultsMateInstallPathKey;
-extern NSString* const kUserDefaultsMateInstallVersionKey;
-
-extern NSString* const kUserDefaultsDisableRMateServerKey;
-extern NSString* const kUserDefaultsRMateServerListenKey;
-extern NSString* const kUserDefaultsRMateServerPortKey;
-
-extern NSString* const kRMateServerListenLocalhost;
-extern NSString* const kRMateServerListenRemote;
-
 // ================
 // = Registration =
 // ================

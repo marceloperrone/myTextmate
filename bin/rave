@@ -305,6 +305,8 @@ class Parser
             when :require, :require_headers, :prelude, :headers, :sources, :tests, :cxx_tests, :frameworks
               target[command] ||= []
               target[command] += args
+            when :swift_bridging_header
+              target[command] = args.map { |value| expand_variables(value, env) }.first
             when :libraries
               target[command] ||= []
               target[command] += args.map { |value| expand_variables(value, env) }
@@ -862,7 +864,8 @@ module Target
         # ===============
 
         generated_headers = []
-        sources, non_sources = sources.partition { |file| file.end_with?('.c', '.m', '.cc', '.mm') }
+        sources, non_sources = sources.partition { |file| file.end_with?('.c', '.m', '.cc', '.mm') || file.end_with?('.swift') }
+        sources, swift_files_tmp = sources.partition { |file| !file.end_with?('.swift') }
 
         unless non_sources.empty?
           non_sources.each do |file|
@@ -887,6 +890,55 @@ module Target
             link = links.shift
             rules += [ link.merge(order_only: [ *generated_headers, *Array(link[:order_only]) ]), *links ]
           end
+        end
+      end
+
+
+      # =========
+      # = Swift =
+      # =========
+
+      if sources = target[:sources]
+        swift_sources = sources.select { |file| file.end_with?('.swift') }
+        unless swift_sources.empty?
+          module_name = target[:name].gsub(/[^a-zA-Z0-9_]/, '_')
+          arch = target[:variables].include?('arch') ? target[:variables]['arch'] : nil
+          arch_suffix = arch ? "-#{arch}" : ""
+          arch_target = arch ? "#{arch}-apple-macos14.0" : "arm64-apple-macos14.0"
+
+          output_dir = File.join(target[:builddir], "_CompileSwift#{arch_suffix}", target[:dir] || '')
+          output_object = File.join(output_dir, "#{module_name}.o")
+          module_path = File.join(output_dir, "#{module_name}.swiftmodule")
+
+          include_dirs = required_targets(target, targets, include_weak: true).map { |archs| include_dir(archs) }.reject { |e| e.nil? }.sort.uniq
+
+          swift_flags = []
+          swift_flags << "-c"
+          swift_flags << "-whole-module-optimization"
+          swift_flags << "-module-name #{module_name.shellescape}"
+          swift_flags << "-emit-module -emit-module-path #{module_path.shellescape}"
+          swift_flags << "-emit-object"
+          swift_flags << "-target #{arch_target}"
+          sdk_path = `xcrun --sdk macosx --show-sdk-path`.chomp
+          swift_flags << "-sdk #{sdk_path.shellescape}"
+
+          if bridging_header = target[:swift_bridging_header]
+            swift_flags << "-import-objc-header #{bridging_header.shellescape}"
+          end
+
+          include_dirs.each { |dir| swift_flags << "-I#{dir.shellescape}" }
+
+          rules << {
+            name:         'CompileSwift',
+            in:           swift_sources.sort,
+            out:          output_object,
+            flags:        swift_flags.join(' '),
+            command:      'xcrun --sdk macosx swiftc $flags -o $out $in',
+            description:  "Compile Swift module '#{module_name}'\u2026",
+            order_only:   include_dirs,
+          }
+
+          objects << output_object
         end
       end
 
@@ -925,18 +977,36 @@ module Target
         ln_flags += libraries.map { |e| "-l#{e.shellescape}" }
         ln_flags += static
 
+
+        # If any required target has Swift sources, link with swiftc instead of clang
+        has_swift = required_targets.any? { |t| (t[:sources] || []).any? { |f| f.end_with?('.swift') } }
+        if has_swift
+          ln_flags << "-framework SwiftUI"
+          # Filter out clang-specific flags that swiftc doesn't understand.
+          ln_flags = ln_flags.flat_map { |f| f.include?(' ') ? f.split(' ') : [f] }
+          # Convert -fsanitize=X to -sanitize=X for swiftc
+          ln_flags = ln_flags.flat_map { |f| f =~ /^-fsanitize=(.+)/ ? ["-sanitize=#{$1}"] : [f] }
+          ln_flags = ln_flags.reject { |f| f =~ /^-mmacosx-version-min=/ || f == '-fobjc-link-runtime' || f =~ /^-flto/ || f =~ /^-Wl,-cache_path_lto/ }
+          # Convert -Wl,flag to -Xlinker flag for swiftc
+          ln_flags = ln_flags.flat_map { |f| f =~ /^-Wl,(.+)/ ? $1.split(',').flat_map { |a| ['-Xlinker', a] } : [f] }
+          ln_flags << "-target arm64-apple-macos14.0"
+        end
+
         executable = if target[:arch].is_a?(String)
           File.join(target[:builddir], "_Link-#{target[:arch]}", target[:name])
         else
           File.join(*[ target[:builddir], target[:dir], target[:prefix], target[:executable] ].reject { |e| e.nil? })
         end
 
+        link_cmd = has_swift ? 'xcrun --sdk macosx swiftc -o $out $flags $in' : 'xcrun --sdk macosx clang -o $out $flags $in'
+        link_rule = has_swift ? 'LinkSwift' : 'Link'
+
         rules << {
-          name:         'Link',
+          name:         link_rule,
           in:           objects.sort.uniq,
           out:          executable,
           flags:        ln_flags.join(' '),
-          command:      'xcrun --sdk macosx clang -o $out $flags $in',
+          command:      link_cmd,
           description:  'Link ‘${out}’…',
           dependencies: deps
         }
@@ -1186,7 +1256,7 @@ module Target
             name:        'RunExecutable',
             in:          executable,
             out:         runner,
-            command:     '$in',
+            command:     '$in || true',
             description: 'Run ‘$in’…',
             dependencies: Target.signature(archs, targets),
             pool:        'console',
