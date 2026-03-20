@@ -1,7 +1,6 @@
 #import "OakCommandRefresh.h"
 #import <OakCommand/OakCommand.h>
 #import <document/OakDocument.h>
-#import <HTMLOutput/HTMLOutput.h>
 #import <settings/settings.h>
 #import <ns/ns.h>
 
@@ -49,9 +48,6 @@ static NSMutableSet<OakCommandRefresher*>* CommandRefreshers = [NSMutableSet set
 		_window    = window;
 		_variables = variables;
 
-		_command.updateHTMLViewAtomically = YES;
-		_command.htmlOutputView.reusable  = NO;
-
 		__weak OakCommandRefresher* weakSelf = self;
 		_command.terminationHandler = ^(OakCommand* command, BOOL normalExit){
 			if(OakCommandRefresher* refresher = weakSelf)
@@ -66,7 +62,6 @@ static NSMutableSet<OakCommandRefresher*>* CommandRefreshers = [NSMutableSet set
 			}
 		};
 
-		[_command.htmlOutputView addObserver:self forKeyPath:@"visible" options:0 context:nullptr];
 		if(_options & OakCommandRefresherDocumentDidChange)
 			[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(contentDidChange:) name:OakDocumentContentDidChangeNotification object:_document];
 
@@ -84,21 +79,12 @@ static NSMutableSet<OakCommandRefresher*>* CommandRefreshers = [NSMutableSet set
 
 - (void)dealloc
 {
-	_command.htmlOutputView.reusable = YES;
 	[NSNotificationCenter.defaultCenter removeObserver:self];
-	[_command.htmlOutputView removeObserver:self forKeyPath:@"visible"];
 }
 
 - (NSUUID*)identifier
 {
 	return _command.identifier;
-}
-
-- (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)anObject change:(NSDictionary*)someChanges context:(void*)context
-{
-	if([keyPath isEqualToString:@"visible"])
-		return [self teardown];
-	[super observeValueForKeyPath:keyPath ofObject:anObject change:someChanges context:context];
 }
 
 - (void)executeForAction:(NSString*)action afterDelay:(BOOL)flag
@@ -143,18 +129,12 @@ static NSMutableSet<OakCommandRefresher*>* CommandRefreshers = [NSMutableSet set
 		[self executeForAction:@"DocumentClosed" afterDelay:NO];
 	}
 
-	[_command closeHTMLOutputView];
 	[self teardown];
 }
 
 - (void)windowWillClose:(NSNotification*)aNotification
 {
 	[self teardown];
-}
-
-- (void)bringHTMLOutputToFront:(id)sender
-{
-	[[_command.htmlOutputView window] makeKeyAndOrderFront:sender];
 }
 
 - (void)teardown

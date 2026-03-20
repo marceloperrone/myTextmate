@@ -30,7 +30,6 @@
 #import <settings/settings.h>
 #import <oak/debug.h>
 #import <oak/oak.h>
-#import <scm/scm.h>
 #import <text/types.h>
 
 void OakOpenDocuments (NSArray* paths, BOOL treatFilePackageAsFolder)
@@ -109,7 +108,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 		{ @"File",
 			.submenu = {
 				{ @"New",                     @selector(newDocument:),              @"n"   },
-				{ @"New File Browser",        @selector(newFileBrowser:),           @"n", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl, .alternate = YES },
 				{ @"New Tab",                 @selector(newDocumentInTab:),         @"n", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
 				{ @"Open…",                   @selector(openDocument:),             @"o"   },
@@ -233,9 +231,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 						{ @"Default Size", @selector(makeTextStandardSize:), @"0" },
 					}
 				},
-				{ @"Show File Browser",      @selector(toggleFileBrowser:),    @"d", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
-				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
-				{ @"Show Line Numbers",      @selector(toggleLineNumbers:),    @"l", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
 				{ @"Show Invisibles",        @selector(toggleShowInvisibles:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
@@ -317,8 +312,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ /* -------- */ },
 				{ @"Go to Related File",         @selector(goToRelatedFile:),              .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption, .key = NSUpArrowFunctionKey },
 				{ /* -------- */ },
-				{ @"Move Focus to File Browser", @selector(moveFocus:),                    .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption, .key = NSTabCharacter },
-			}
+				}
 		},
 		{ @"Text",
 			.submenu = {
@@ -364,8 +358,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Select None",      @selector(deselectAll:),            @"A"   },
 				{ /* -------- */ },
 				{ @"Project Folder",   @selector(goToProjectFolder:),      @"P"   },
-				{ @"SCM Status",       @selector(goToSCMDataSource:),      @"Y"   },
-				{ @"Computer",         @selector(goToComputer:),           @"C"   },
+					{ @"Computer",         @selector(goToComputer:),           @"C"   },
 				{ @"Home",             @selector(goToHome:),               @"H"   },
 				{ @"Desktop",          @selector(goToDesktop:),            @"D"   },
 				{ @"Favorites",        @selector(goToFavorites:)                  },
@@ -581,24 +574,12 @@ BOOL HasDocumentWindow (NSArray* windows)
 	NSMenu* selectMenu = [[[[[NSApp mainMenu] itemWithTitle:@"Edit"] submenu] itemWithTitle:@"Select"] submenu];
 	[[selectMenu itemWithTitle:@"Toggle Column Selection"] setActivationString:@"⌥" withFont:nil];
 
-	[AboutWindowController showChangesIfUpdated];
-
 	[CrashReporter.sharedInstance applicationDidFinishLaunching:aNotification];
 	[CrashReporter.sharedInstance postNewCrashReportsToURLString:[NSString stringWithFormat:@"%s/crashes", REST_API]];
 
 	[OakCommitWindowServer sharedInstance]; // Setup server
 
 	self.didFinishLaunching = YES;
-}
-
-- (void)applicationWillResignActive:(NSNotification*)aNotification
-{
-	scm::disable();
-}
-
-- (void)applicationWillBecomeActive:(NSNotification*)aNotification
-{
-	scm::enable();
 }
 
 - (void)applicationDidResignActive:(NSNotification*)aNotification

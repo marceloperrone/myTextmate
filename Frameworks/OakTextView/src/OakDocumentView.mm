@@ -1,5 +1,6 @@
 #import "OakDocumentView.h"
-#import "GutterView.h"
+// GutterView removed — line numbers stripped for Tahoe compatibility
+
 // OTVStatusBar replaced by SwiftUI StatusBarView (via StatusBarViewModel)
 #import <document/OakDocument.h>
 #import <file/type.h>
@@ -23,12 +24,8 @@
 static NSString* const kUserDefaultsLineNumberScaleFactorKey = @"lineNumberScaleFactor";
 static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontName";
 
-
-@interface OakDocumentView () <NSAccessibilityGroup, GutterViewDelegate>
+@interface OakDocumentView () <NSAccessibilityGroup>
 {
-	NSScrollView* gutterScrollView;
-	GutterView* gutterView;
-	OakBackgroundFillView* gutterDividerView;
 
 	NSScrollView* textScrollView;
 
@@ -57,45 +54,24 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		_textView.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable;
 
 		textScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-		textScrollView.hasVerticalScroller      = YES;
-		textScrollView.verticalScrollElasticity = NSScrollElasticityAllowed;
-		textScrollView.hasHorizontalScroller    = YES;
-		textScrollView.autohidesScrollers       = YES;
-		textScrollView.borderType               = NSNoBorder;
-		textScrollView.documentView             = _textView;
-
-		gutterView = [[GutterView alloc] initWithFrame:NSZeroRect];
-		gutterView.partnerView = _textView;
-		gutterView.delegate    = self;
-		// Only line numbers — bookmarks and folding columns removed
-		if([NSUserDefaults.standardUserDefaults boolForKey:@"DocumentView Disable Line Numbers"])
-			[gutterView setVisibility:NO forColumnWithIdentifier:GVLineNumbersColumnIdentifier];
-		[gutterView setTranslatesAutoresizingMaskIntoConstraints:NO];
-
-		gutterScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-		gutterScrollView.accessibilityElement = NO;
-		gutterScrollView.borderType   = NSNoBorder;
-		gutterScrollView.wantsLayer   = YES;
-		gutterScrollView.canDrawSubviewsIntoLayer = YES;
-		gutterScrollView.documentView = gutterView;
-
-		[gutterScrollView.contentView addConstraint:[NSLayoutConstraint constraintWithItem:gutterView attribute:NSLayoutAttributeLeft relatedBy:NSLayoutRelationEqual toItem:gutterScrollView.contentView attribute:NSLayoutAttributeLeft multiplier:1.0 constant:0.0]];
-		[gutterScrollView.contentView addConstraint:[NSLayoutConstraint constraintWithItem:gutterView attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:gutterScrollView.contentView attribute:NSLayoutAttributeTop multiplier:1.0 constant:0.0]];
-		[gutterScrollView.contentView addConstraint:[NSLayoutConstraint constraintWithItem:gutterView attribute:NSLayoutAttributeRight relatedBy:NSLayoutRelationEqual toItem:gutterScrollView.contentView attribute:NSLayoutAttributeRight multiplier:1.0 constant:0.0]];
-
-		gutterDividerView = OakCreateVerticalLine(OakBackgroundFillViewStyleNone);
+		textScrollView.hasVerticalScroller               = YES;
+		textScrollView.verticalScrollElasticity          = NSScrollElasticityAllowed;
+		textScrollView.hasHorizontalScroller             = YES;
+		textScrollView.autohidesScrollers                = YES;
+		textScrollView.borderType                        = NSNoBorder;
+		textScrollView.documentView                      = _textView;
 
 		statusBarModel = [[NSClassFromString(@"StatusBarViewModel") alloc] init];
 		[statusBarModel setValue:self forKey:@"delegate"];
 		[statusBarModel setValue:self forKey:@"target"];
 		_statusBar = [statusBarModel valueForKey:@"hostingView"];
 
-		OakAddAutoLayoutViewsToSuperview(@[ gutterScrollView, gutterDividerView, textScrollView, _statusBar ], self);
+		OakAddAutoLayoutViewsToSuperview(@[ textScrollView, _statusBar ], self);
 		OakSetupKeyViewLoop(@[ self, _textView, _statusBar ]);
 
 		self.document = [OakDocument documentWithString:@"" fileType:@"text.plain" customName:@"placeholder"];
 
-		self.observedKeys = @[ @"selectionString", @"symbol", @"recordingMacro", @"themeUUID" ];
+		self.observedKeys = @[ @"selectionString", @"symbol", @"themeUUID" ];
 		for(NSString* keyPath in self.observedKeys)
 			[_textView addObserver:self forKeyPath:keyPath options:NSKeyValueObservingOptionInitial context:NULL];
 	}
@@ -109,7 +85,7 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 
 	NSMutableArray* stackedViews = [NSMutableArray array];
 	[stackedViews addObjectsFromArray:topAuxiliaryViews];
-	[stackedViews addObject:gutterScrollView];
+	[stackedViews addObject:textScrollView];
 	[stackedViews addObjectsFromArray:bottomAuxiliaryViews];
 
 	if(_statusBar)
@@ -118,7 +94,7 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[_statusBar]|" options:0 metrics:nil views:NSDictionaryOfVariableBindings(_statusBar)]];
 	}
 
-	[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[gutterScrollView(==gutterView)][gutterDividerView][textScrollView(>=100)]|" options:NSLayoutFormatAlignAllTop|NSLayoutFormatAlignAllBottom metrics:nil views:NSDictionaryOfVariableBindings(gutterScrollView, gutterView, gutterDividerView, textScrollView)]];
+	[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[textScrollView(>=100)]|" options:NSLayoutFormatAlignAllTop|NSLayoutFormatAlignAllBottom metrics:nil views:NSDictionaryOfVariableBindings(textScrollView)]];
 	[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[topView]" options:0 metrics:nil views:@{ @"topView": stackedViews[0] }]];
 	[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:[bottomView]|" options:0 metrics:nil views:@{ @"bottomView": [stackedViews lastObject] }]];
 
@@ -157,7 +133,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		// Restore current property values
 		[statusBarModel setValue:[_textView valueForKey:@"selectionString"] forKey:@"selectionString"];
 		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
-		[statusBarModel setValue:@(_textView.isRecordingMacro) forKey:@"recordingMacro"];
 		if(self.document)
 		{
 			NSString* fileType = self.document.fileType;
@@ -176,34 +151,20 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	return round(std::min(1.5 * [_textView.font capHeight], [_textView.font ascender] - [_textView.font descender] + [_textView.font leading]));
 }
 
-- (void)updateGutterViewFont:(id)sender
-{
-	CGFloat const scaleFactor = [NSUserDefaults.standardUserDefaults floatForKey:kUserDefaultsLineNumberScaleFactorKey] ?: 0.8;
-	NSString* lineNumberFontName = [NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsLineNumberFontNameKey] ?: [_textView.font fontName];
-
-	gutterView.lineNumberFont = [NSFont fontWithName:lineNumberFontName size:round(scaleFactor * [_textView.font pointSize] * _textView.fontScaleFactor)];
-	[gutterView reloadData:self];
-}
-
 - (IBAction)makeTextLarger:(id)sender
 {
 	_textView.fontScaleFactor += 0.1;
-	[self updateGutterViewFont:self];
 }
 
 - (IBAction)makeTextSmaller:(id)sender
 {
 	if(_textView.fontScaleFactor > 0.1)
-	{
 		_textView.fontScaleFactor -= 0.1;
-		[self updateGutterViewFont:self];
-	}
 }
 
 - (IBAction)makeTextStandardSize:(id)sender
 {
 	_textView.fontScaleFactor = 1;
-	[self updateGutterViewFont:self];
 }
 
 - (void)changeFont:(id)sender
@@ -215,7 +176,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		settings_t::set(kSettingsFontNameKey, fontName);
 		settings_t::set(kSettingsFontSizeKey, [newFont pointSize]);
 		_textView.font = newFont;
-		[self updateGutterViewFont:self];
 	}
 }
 
@@ -224,17 +184,12 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	if([aKeyPath isEqualToString:@"selectionString"])
 	{
 		NSString* str = [_textView valueForKey:@"selectionString"];
-		[gutterView setHighlightedRange:to_s(str ?: @"1")];
 		[statusBarModel setValue:str forKey:@"selectionString"];
 		_symbolChooser.selectionString = str;
 	}
 	else if([aKeyPath isEqualToString:@"symbol"])
 	{
 		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
-	}
-	else if([aKeyPath isEqualToString:@"recordingMacro"])
-	{
-		[statusBarModel setValue:@(_textView.isRecordingMacro) forKey:@"recordingMacro"];
 	}
 	else if([aKeyPath isEqualToString:@"fileType"])
 	{
@@ -290,7 +245,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	}
 
 	[_textView setDocument:self.document];
-	[gutterView reloadData:self];
 	[self updateStyle];
 
 	if(_symbolChooser)
@@ -328,40 +282,13 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 			}
 		}
 
-		[self updateGutterViewFont:self]; // trigger update of gutter view’s line number font
-		auto const& styles = theme->gutter_styles();
-
-		gutterView.foregroundColor           = [NSColor colorWithCGColor:styles.foreground];
-		gutterView.backgroundColor           = [NSColor colorWithCGColor:styles.background];
-		gutterView.iconColor                 = [NSColor colorWithCGColor:styles.icons];
-		gutterView.iconHoverColor            = [NSColor colorWithCGColor:styles.iconsHover];
-		gutterView.iconPressedColor          = [NSColor colorWithCGColor:styles.iconsPressed];
-		gutterView.selectionForegroundColor  = [NSColor colorWithCGColor:styles.selectionForeground];
-		gutterView.selectionBackgroundColor  = [NSColor colorWithCGColor:styles.selectionBackground];
-		gutterView.selectionIconColor        = [NSColor colorWithCGColor:styles.selectionIcons];
-		gutterView.selectionIconHoverColor   = [NSColor colorWithCGColor:styles.selectionIconsHover];
-		gutterView.selectionIconPressedColor = [NSColor colorWithCGColor:styles.selectionIconsPressed];
-		gutterView.selectionBorderColor      = [NSColor colorWithCGColor:styles.selectionBorder];
-		gutterScrollView.backgroundColor     = gutterView.backgroundColor;
-		gutterDividerView.activeBackgroundColor = [NSColor colorWithCGColor:styles.divider];
-
-		[gutterView setNeedsDisplay:YES];
+		self.window.backgroundColor = [NSColor colorWithCGColor:theme->background(to_s(self.document.fileType))];
 	}
-}
-
-- (IBAction)toggleLineNumbers:(id)sender
-{
-	BOOL isVisibleFlag = ![gutterView visibilityForColumnWithIdentifier:GVLineNumbersColumnIdentifier];
-	[gutterView setVisibility:isVisibleFlag forColumnWithIdentifier:GVLineNumbersColumnIdentifier];
-	if(isVisibleFlag)
-			[NSUserDefaults.standardUserDefaults removeObjectForKey:@"DocumentView Disable Line Numbers"];
-	else	[NSUserDefaults.standardUserDefaults setObject:@YES forKey:@"DocumentView Disable Line Numbers"];
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)aMenuItem
 {
-	if([aMenuItem action] == @selector(toggleLineNumbers:))
-		[aMenuItem setTitle:[gutterView visibilityForColumnWithIdentifier:GVLineNumbersColumnIdentifier] ? @"Hide Line Numbers" : @"Show Line Numbers"];
+	if(NO) { /* toggleLineNumbers removed */ }
 	else if([aMenuItem action] == @selector(takeTabSizeFrom:))
 		[aMenuItem setState:_textView.tabSize == [aMenuItem tag] ? NSControlStateValueOn : NSControlStateValueOff];
 	else if([aMenuItem action] == @selector(showTabSizeSelectorPanel:))
@@ -624,15 +551,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		[[NSBundle bundleForClass:[self class]] loadNibNamed:@"TabSizeSetting" owner:self topLevelObjects:NULL];
 	[tabSizeSelectorPanel makeKeyAndOrderFront:self];
 }
-
-- (void)toggleMacroRecording:(id)sender    { [_textView toggleMacroRecording:sender]; }
-
-// =============================
-// = GutterView Delegate Proxy =
-// =============================
-
-- (GVLineRecord)lineRecordForPosition:(CGFloat)yPos                              { return [_textView lineRecordForPosition:yPos];               }
-- (GVLineRecord)lineFragmentForLine:(NSUInteger)aLine column:(NSUInteger)aColumn { return [_textView lineFragmentForLine:aLine column:aColumn]; }
 
 
 // ============

@@ -181,10 +181,6 @@ public final class FileTreeModel: NSObject {
         // No-op for now
     }
 
-    @objc public func goToSCMDataSource(_ sender: Any?) {
-        // No-op for now
-    }
-
     // MARK: - Menu Validation
 
     @objc public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -277,7 +273,6 @@ public final class FileItemWrapper: Identifiable, ObservableObject {
     public let isDirectory: Bool
     public let isSymbolicLink: Bool
     public var children: [FileItemWrapper]?
-    public var scmStatus: SCMStatus = .none
     public var finderTags: [FinderTag] = []
 
     public init(url: URL) {
@@ -332,27 +327,6 @@ public final class FileItemWrapper: Identifiable, ObservableObject {
 }
 
 // MARK: - Supporting Types
-
-public enum SCMStatus: String {
-    case none
-    case unversioned
-    case modified
-    case added
-    case deleted
-    case conflicted
-    case ignored
-
-    public var color: Color {
-        switch self {
-        case .none, .ignored:    return .clear
-        case .unversioned:       return .gray
-        case .modified:          return .orange
-        case .added:             return .green
-        case .deleted:           return .red
-        case .conflicted:        return .purple
-        }
-    }
-}
 
 public struct FinderTag: Identifiable {
     public let id = UUID()

@@ -32,7 +32,6 @@
 - (NSURL*)createFolder:(id)sender;
 @end
 #import <OakCommand/OakCommand.h>
-#import <HTMLOutputWindow/HTMLOutputWindow.h>
 #import <OakFilterList/FileChooser.h>
 #import <OakSystem/application.h>
 #import <Find/Find.h>
@@ -40,7 +39,6 @@
 #import <BundleEditor/BundleEditor.h>
 #import <file/path_info.h>
 #import <io/entries.h>
-#import <scm/scm.h>
 #import <text/parse.h>
 #import <text/tokenize.h>
 #import <text/utf8.h>
@@ -92,17 +90,13 @@ static void show_command_error (std::string const& message, oak::uuid_t const& u
 	}];
 }
 
-@interface DocumentWindowController () <NSWindowDelegate, NSTouchBarDelegate, OakTextViewDelegate, OakUserDefaultsObserver, FindDelegate>
+@interface DocumentWindowController () <NSWindowDelegate, NSToolbarDelegate, NSTouchBarDelegate, OakTextViewDelegate, OakUserDefaultsObserver, FindDelegate>
 {
 	NSMutableSet<NSUUID*>*                 _stickyDocumentIdentifiers;
 
-	scm::info_ptr                          _projectSCMInfo;
-	std::map<std::string, std::string>     _projectSCMVariables;
 	std::vector<std::string>               _projectScopeAttributes;  // kSettingsScopeAttributesKey
-	std::vector<std::string>               _externalScopeAttributes; // attr.scm.git, attr.project.ninja
+	std::vector<std::string>               _externalScopeAttributes; // attr.project.ninja
 
-	scm::info_ptr                          _documentSCMInfo;
-	std::map<std::string, std::string>     _documentSCMVariables;
 	std::vector<std::string>               _documentScopeAttributes; // attr.os-version, attr.untitled / attr.rev-path + kSettingsScopeAttributesKey
 }
 @property (nonatomic) NSTitlebarAccessoryViewController* titlebarViewController;
@@ -113,10 +107,6 @@ static void show_command_error (std::string const& message, oak::uuid_t const& u
 @property (nonatomic) OakTextView*                textView;
 
 @property (nonatomic) BOOL                        autoRevealFile;
-
-@property (nonatomic) HTMLOutputWindowController* htmlOutputWindowController;
-@property (nonatomic) OakHTMLOutputView*          htmlOutputView;
-@property (nonatomic) BOOL                        htmlOutputInWindow;
 
 @property (nonatomic) NSSegmentedControl*         previousNextTouchBarControl;
 
@@ -217,10 +207,20 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 		NSUInteger windowStyle = (NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskFullSizeContentView);
 		self.window = [[NSWindow alloc] initWithContentRect:[NSWindow contentRectForFrameRect:[self frameRectForNewWindow] styleMask:windowStyle] styleMask:windowStyle backing:NSBackingStoreBuffered defer:NO];
-		self.window.animationBehavior  = NSWindowAnimationBehaviorDocumentWindow;
-		self.window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
-		self.window.delegate           = self;
-		self.window.releasedWhenClosed = NO;
+		self.window.animationBehavior       = NSWindowAnimationBehaviorDocumentWindow;
+		self.window.collectionBehavior     = NSWindowCollectionBehaviorFullScreenPrimary;
+		self.window.delegate               = self;
+		self.window.releasedWhenClosed     = NO;
+		self.window.backgroundColor        = NSColor.windowBackgroundColor;
+		self.window.titleVisibility        = NSWindowTitleVisible;
+		self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+
+		NSToolbar* toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
+		toolbar.delegate = self;
+		toolbar.showsBaselineSeparator = NO;
+		toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+		self.window.toolbar = toolbar;
+		self.window.toolbarStyle = NSWindowToolbarStyleUnified;
 
 		_titlebarViewController = [self.tabBarModel valueForKey:@"titlebarViewController"];
 		[self.window addTitlebarAccessoryViewController:_titlebarViewController];
@@ -376,7 +376,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 - (void)userDefaultsDidChange:(NSNotification*)aNotification
 {
-	self.htmlOutputInWindow = [[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsHTMLOutputPlacementKey] isEqualToString:@"window"];
 	self.autoRevealFile = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAutoRevealFileKey];
 	self.documentView.hideStatusBar = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsHideStatusBarKey];
 
@@ -557,8 +556,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 - (IBAction)performCloseSplit:(id)sender
 {
-	ASSERT(sender == self.layoutView.htmlOutputView);
-	self.htmlOutputVisible = NO;
+	// No-op: HTML output panel removed
 }
 
 - (IBAction)performCloseWindow:(id)sender
@@ -607,15 +605,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 - (BOOL)windowShouldClose:(id)sender
 {
-	if(!self.htmlOutputInWindow && _htmlOutputView.isRunningCommand)
-	{
-		[_htmlOutputView stopLoadingWithUserInteraction:YES completionHandler:^(BOOL didStop){
-			if(didStop)
-				[sender performSelector:@selector(performClose:) withObject:self afterDelay:0];
-		}];
-		return NO;
-	}
-
 	NSArray<OakDocument*>* documentsToSave = [_documents filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"isDocumentEdited == YES"]];
 	if(!documentsToSave.count)
 	{
@@ -1181,48 +1170,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	}];
 }
 
-- (OakHTMLOutputView*)htmlOutputView:(BOOL)createFlag forIdentifier:(NSUUID*)identifier
-{
-	// if createFlag == YES then return (potential new) OakHTMLOutputView where isRunningCommand == NO.
-	// If createFlag == NO and there is non-busy OakHTMLOutputView with commandIdentifier == identifier then return it
-	// otherwise return busy OakHTMLOutputView with commandIdentifier == identifier or nil.
-
-	if(!self.htmlOutputInWindow)
-	{
-		BOOL nonExistingOrNonBusy   = !self.htmlOutputView || !self.htmlOutputView.isRunningCommand;
-		BOOL existsForOurIdentifier = self.htmlOutputView && [self.htmlOutputView.commandIdentifier isEqual:identifier];
-		if(createFlag ? nonExistingOrNonBusy : existsForOurIdentifier)
-		{
-			self.htmlOutputVisible = YES;
-			return self.htmlOutputView;
-		}
-	}
-
-	NSMutableArray <OakHTMLOutputView*>* htmlOutputViews = [NSMutableArray array];
-	if(self.htmlOutputWindowController)
-		[htmlOutputViews addObject:self.htmlOutputWindowController.htmlOutputView];
-
-	for(NSWindow* window in [NSApp orderedWindows])
-	{
-		if([window isVisible] && ![window isMiniaturized] && [window.delegate isKindOfClass:[HTMLOutputWindowController class]])
-			[htmlOutputViews addObject:[(HTMLOutputWindowController*)window.delegate htmlOutputView]];
-	}
-
-	NSArray* allHTMLViews = [htmlOutputViews filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"needsNewWebView == NO AND isReusable == YES AND commandIdentifier == %@", identifier]];
-	NSArray* nonBusyViews = [allHTMLViews filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"isRunningCommand == NO"]];
-
-	if(OakHTMLOutputView* view = [nonBusyViews firstObject])
-	{
-		return view;
-	}
-	else if(createFlag)
-	{
-		self.htmlOutputWindowController = [[HTMLOutputWindowController alloc] initWithIdentifier:identifier];
-		return self.htmlOutputWindowController.htmlOutputView;
-	}
-	return [allHTMLViews firstObject];
-}
-
 - (void)updateEnvironment:(std::map<std::string, std::string>&)res forCommand:(OakCommand*)aCommand
 {
 	for(auto const& pair : [self variables])
@@ -1271,10 +1218,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	struct attribute_rule_t { std::string attribute; path::glob_t glob; std::string group; };
 	static auto const rules = new std::vector<attribute_rule_t>
 	{
-		{ "attr.scm.svn",         ".svn",           "scm"     },
-		{ "attr.scm.hg",          ".hg",            "scm"     },
-		{ "attr.scm.git",         ".git",           "scm"     },
-		{ "attr.scm.p4",          ".p4config",      "scm"     },
 		{ "attr.project.ninja",   "build.ninja",    "build"   },
 		{ "attr.project.make",    "Makefile",       "build"   },
 		{ "attr.project.xcode",   "*.xcodeproj",    "build"   },
@@ -1345,18 +1288,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	if(_projectPath != newProjectPath && ![_projectPath isEqualToString:newProjectPath])
 	{
 		_projectPath = newProjectPath;
-		if(_projectSCMInfo = scm::info(to_s(_projectPath)))
-		{
-			__weak DocumentWindowController* weakSelf = self;
-			_projectSCMInfo->push_callback(^(scm::info_t const& info){
-				weakSelf.projectSCMVariables = info.scm_variables();
-			});
-		}
-		else
-		{
-			self.projectSCMVariables = std::map<std::string, std::string>();
-		}
-
 		_projectScopeAttributes.clear();
 
 		std::string const customAttributes = settings_for_path(NULL_STR, text::join(_projectScopeAttributes, " "), to_s(_projectPath)).get(kSettingsScopeAttributesKey, NULL_STR);
@@ -1384,49 +1315,11 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 				_documentScopeAttributes.push_back(customAttributes);
 		}
 
-		self.documentSCMVariables = std::map<std::string, std::string>();
-
-		if(_documentSCMInfo = scm::info(docDirectory))
-		{
-			__weak DocumentWindowController* weakSelf = self;
-			_documentSCMInfo->push_callback(^(scm::info_t const& info){
-				weakSelf.documentSCMVariables = info.scm_variables();
-			});
-		}
-
 		[self updateExternalAttributes];
 
 		if(self.autoRevealFile && self.selectedDocument.path && self.fileBrowserVisible)
 			[self revealFileInProject:self];
 	}
-}
-
-- (void)setProjectSCMVariables:(std::map<std::string, std::string> const&)newVariables
-{
-	if(_projectSCMVariables != newVariables)
-	{
-		_projectSCMVariables = newVariables;
-		[self updateWindowTitle];
-	}
-}
-
-- (void)setDocumentSCMVariables:(std::map<std::string, std::string> const&)newVariables
-{
-	if(_documentSCMVariables != newVariables)
-	{
-		_documentSCMVariables = newVariables;
-		[self updateWindowTitle];
-	}
-}
-
-- (std::map<std::string, std::string> const&)projectSCMVariables
-{
-	return _projectSCMVariables;
-}
-
-- (std::map<std::string, std::string> const&)documentSCMVariables
-{
-	return _documentSCMVariables;
 }
 
 - (void)takeProjectPathFrom:(NSMenuItem*)aMenuItem
@@ -1442,17 +1335,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 - (NSString*)scopeAttributes
 {
 	std::set<std::string> attributes;
-
-	auto const& vars = _documentSCMVariables.empty() ? _projectSCMVariables : _documentSCMVariables;
-	auto scmName = vars.find("TM_SCM_NAME");
-	if(scmName != vars.end())
-		attributes.insert("attr.scm." + scmName->second);
-	auto branch = vars.find("TM_SCM_BRANCH");
-	if(branch != vars.end())
-		attributes.insert("attr.scm.branch." + branch->second);
-
-	if(self.selectedDocument.scmStatus != scm::status::unknown)
-		attributes.insert("attr.scm.status." + to_s(self.selectedDocument.scmStatus));
 
 	attributes.insert(_documentScopeAttributes.begin(), _documentScopeAttributes.end());
 	attributes.insert(_projectScopeAttributes.begin(), _projectScopeAttributes.end());
@@ -1845,72 +1727,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 - (IBAction)goToHome:(id)sender             { self.fileBrowserVisible = YES; [self.fileBrowser goToHome:sender];             }
 - (IBAction)goToDesktop:(id)sender          { self.fileBrowserVisible = YES; [self.fileBrowser goToDesktop:sender];          }
 - (IBAction)goToFavorites:(id)sender        { self.fileBrowserVisible = YES; [self.fileBrowser goToFavorites:sender];        }
-- (IBAction)goToSCMDataSource:(id)sender    { self.fileBrowserVisible = YES; [self.fileBrowser goToSCMDataSource:sender];    }
 - (IBAction)orderFrontGoToFolder:(id)sender { self.fileBrowserVisible = YES; [self.fileBrowser orderFrontGoToFolder:sender]; }
-
-// ===============
-// = HTML Output =
-// ===============
-
-- (NSSize)htmlOutputSize                    { return self.layoutView.htmlOutputSize;  }
-- (void)setHtmlOutputSize:(NSSize)aSize     { self.layoutView.htmlOutputSize = aSize; }
-
-- (BOOL)htmlOutputVisible
-{
-	return self.htmlOutputInWindow ? [self.htmlOutputWindowController.window isVisible] : self.layoutView.htmlOutputView != nil;
-}
-
-- (void)setHtmlOutputVisible:(BOOL)makeVisibleFlag
-{
-	if(self.htmlOutputVisible == makeVisibleFlag)
-		return;
-
-	if(makeVisibleFlag)
-	{
-		if(self.htmlOutputInWindow)
-		{
-			[self.htmlOutputWindowController showWindow:self];
-		}
-		else
-		{
-			if(!self.htmlOutputView || self.htmlOutputView.needsNewWebView)
-				self.htmlOutputView = [[OakHTMLOutputView alloc] initWithFrame:NSZeroRect];
-			self.layoutView.htmlOutputView = self.htmlOutputView;
-		}
-	}
-	else
-	{
-		if(self.layoutView.htmlOutputView && [[self.window firstResponder] isKindOfClass:[NSView class]] && [(NSView*)[self.window firstResponder] isDescendantOf:self.layoutView.htmlOutputView])
-			[self makeTextViewFirstResponder:self];
-
-		if(self.layoutView.htmlOutputView)
-				self.layoutView.htmlOutputView = nil;
-		else	[self.htmlOutputWindowController close];
-	}
-}
-
-- (void)setHtmlOutputInWindow:(BOOL)showInWindowFlag
-{
-	if(_htmlOutputInWindow == showInWindowFlag)
-		return;
-
-	if(_htmlOutputInWindow = showInWindowFlag)
-	{
-		self.layoutView.htmlOutputView = nil;
-		self.htmlOutputView = nil;
-	}
-	else
-	{
-		self.htmlOutputWindowController = nil;
-	}
-}
-
-- (IBAction)toggleHTMLOutput:(id)sender
-{
-	if(self.htmlOutputVisible && self.htmlOutputInWindow && ![self.htmlOutputWindowController.window isKeyWindow])
-			[self.htmlOutputWindowController showWindow:self];
-	else	self.htmlOutputVisible = !self.htmlOutputVisible;
-}
 
 // =============================
 // = Opening Auxiliary Windows =
@@ -2058,8 +1875,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 - (NSString*)titleForDocument:(OakDocument*)document withSetting:(std::string const&)setting
 {
 	auto map = document.variables;
-	auto const scm = _documentSCMVariables.empty() ? _projectSCMVariables : _documentSCMVariables;
-	map.insert(scm.begin(), scm.end());
 	if(self.projectPath)
 		map["projectDirectory"] = to_s(self.projectPath);
 
@@ -2121,8 +1936,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	}
 
 	auto map = self.selectedDocument.variables;
-	auto const& scm = _documentSCMVariables.empty() ? _projectSCMVariables : _documentSCMVariables;
-	map.insert(scm.begin(), scm.end());
 	if(self.projectPath)
 		map["projectDirectory"] = to_s(self.projectPath);
 
@@ -2225,12 +2038,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	BOOL active = YES;
 	if([menuItem action] == @selector(toggleFileBrowser:))
 		[menuItem setTitle:self.fileBrowserVisible ? @"Hide File Browser" : @"Show File Browser"];
-	else if([menuItem action] == @selector(toggleHTMLOutput:))
-	{
-		BOOL isVisibleAndKey = self.htmlOutputVisible && (!self.htmlOutputInWindow || self.htmlOutputWindowController.window.isKeyWindow);
-		[menuItem setTitle:isVisibleAndKey ? @"Hide HTML Output" : @"Show HTML Output"];
-		active = !self.htmlOutputInWindow || self.htmlOutputWindowController;
-	}
 	else if([menuItem action] == @selector(newDocumentInDirectory:))
 	{
 		NSURL* dirURL = [self.fileBrowser valueForKey:@"directoryURLForNewItems"];
@@ -2470,9 +2277,6 @@ static NSUInteger DisableSessionSavingCount = 0;
 {
 	if(NSString* fileBrowserWidth = project[@"fileBrowserWidth"])
 		self.fileBrowserWidth = [fileBrowserWidth floatValue];
-	if(NSString* htmlOutputSize = project[@"htmlOutputSize"])
-		self.htmlOutputSize = NSSizeFromString(htmlOutputSize);
-
 	self.defaultProjectPath = project[@"projectPath"];
 	self.projectPath        = project[@"projectPath"];
 	self.fileBrowserHistory = project[@"archivedFileBrowserState"] ?: project[@"fileBrowserState"];
@@ -2536,7 +2340,6 @@ static NSUInteger DisableSessionSavingCount = 0;
 		res[@"windowFrame"] = [self.window stringWithSavedFrame];
 
 	res[@"miniaturized"]       = @([self.window isMiniaturized]);
-	res[@"htmlOutputSize"]     = NSStringFromSize(self.htmlOutputSize);
 	res[@"fileBrowserVisible"] = @(self.fileBrowserVisible);
 	res[@"fileBrowserWidth"]   = @(self.fileBrowserWidth);
 
@@ -2605,26 +2408,6 @@ static NSUInteger DisableSessionSavingCount = 0;
 			res[to_s(key)] = to_s(vars[key]);
 	}
 
-	auto const& scmVars = _documentSCMVariables.empty() ? _projectSCMVariables : _documentSCMVariables;
-
-	if(!scmVars.empty())
-	{
-		auto scmName = scmVars.find("TM_SCM_NAME");
-		if(scmName != scmVars.end())
-			res["TM_SCM_NAME"] = scmName->second;
-	}
-	else
-	{
-		for(auto const& attr : _externalScopeAttributes)
-		{
-			if(regexp::match_t const& m = regexp::search("^attr.scm.(?'TM_SCM_NAME'\\w+)$", attr))
-			{
-				res.insert(m.captures().begin(), m.captures().end());
-				break;
-			}
-		}
-	}
-
 	if(NSString* projectDir = self.projectPath)
 	{
 		res["TM_PROJECT_DIRECTORY"] = [projectDir fileSystemRepresentation];
@@ -2678,6 +2461,30 @@ static NSUInteger DisableSessionSavingCount = 0;
 		}];
 		[NSApp activateIgnoringOtherApps:YES];
 	}
+}
+
+// MARK: - NSToolbarDelegate
+
+- (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar
+{
+	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier, NSToolbarFlexibleSpaceItemIdentifier ];
+}
+
+- (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar
+{
+	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier ];
+}
+
+- (NSToolbarItem*)toolbar:(NSToolbar*)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag
+{
+	if([identifier isEqualToString:NSToolbarToggleSidebarItemIdentifier])
+	{
+		NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+		item.target = self;
+		item.action = @selector(toggleFileBrowser:);
+		return item;
+	}
+	return nil;
 }
 @end
 

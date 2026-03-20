@@ -28,13 +28,6 @@ public struct FileItemRow: View {
                 .truncationMode(.middle)
                 .foregroundStyle(isSelected ? .white : .primary)
 
-            // SCM status indicator
-            if item.scmStatus != .none {
-                Circle()
-                    .fill(item.scmStatus.color)
-                    .frame(width: 6, height: 6)
-            }
-
             Spacer()
 
             // Finder tags

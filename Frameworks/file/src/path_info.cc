@@ -1,5 +1,4 @@
 #include "path_info.h"
-#include <scm/scm.h>
 #include <settings/settings.h>
 #include <io/entries.h>
 #include <regexp/glob.h>

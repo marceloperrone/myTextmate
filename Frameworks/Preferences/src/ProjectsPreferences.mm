@@ -20,8 +20,6 @@
 	if(self = [super initWithNibName:nil label:@"Projects" image:[NSImage imageNamed:@"Projects" inSameBundleAsClass:[self class]]])
 	{
 		[OakStringListTransformer createTransformerWithName:@"OakFileBrowserPlacementSettingsTransformer" andObjectsArray:@[ @"left", @"right" ]];
-		[OakStringListTransformer createTransformerWithName:@"OakHTMLOutputPlacementSettingsTransformer" andObjectsArray:@[ @"bottom", @"right", @"window" ]];
-
 		self.defaultsProperties = @{
 			@"foldersOnTop":                 kUserDefaultsFoldersOnTopKey,
 			@"showFileExtensions":           kUserDefaultsShowFileExtensionsKey,
@@ -29,8 +27,6 @@
 			@"disableAutoResize":            kUserDefaultsDisableFileBrowserWindowResizeKey,
 			@"autoRevealFile":               kUserDefaultsAutoRevealFileKey,
 			@"fileBrowserPlacement":         kUserDefaultsFileBrowserPlacementKey,
-			@"htmlOutputPlacement":          kUserDefaultsHTMLOutputPlacementKey,
-
 			@"allowExpandingLinks":          kUserDefaultsAllowExpandingLinksKey,
 			@"fileBrowserSingleClickToOpen": kUserDefaultsFileBrowserSingleClickToOpenKey,
 			@"disableTabReordering":         kUserDefaultsDisableTabReorderingKey,
@@ -137,20 +133,11 @@
 	NSTextField* includeFilesTextField                 = [NSTextField textFieldWithString:@""];
 	NSTextField* nonTextFilesTextField                 = [NSTextField textFieldWithString:@""];
 
-	NSPopUpButton* showCommandOutputPopUp              = OakCreatePopUpButton();
-
 	MBMenu const fileBrowserPositionMenuItems = {
 		{ @"Left side",  .tag = 0 },
 		{ @"Right side", .tag = 1 },
 	};
 	MBCreateMenu(fileBrowserPositionMenuItems, fileBrowserPositionPopUp.menu);
-
-	MBMenu const showCommandOutputMenuItems = {
-		{ @"Below text view",    .tag = 0 },
-		{ @"Right of text view", .tag = 1 },
-		{ @"New window",         .tag = 2 },
-	};
-	MBCreateMenu(showCommandOutputMenuItems, showCommandOutputPopUp.menu);
 
 	NSGridView* gridView = [NSGridView gridViewWithViews:@[
 		@[ OakCreateLabel(@"File browser location:"),  fileBrowserLocationPopUp                 ],
@@ -169,18 +156,15 @@
 		@[ OakCreateLabel(@"Exclude files matching:"), excludeFilesTextField                    ],
 		@[ OakCreateLabel(@"Include files matching:"), includeFilesTextField                    ],
 		@[ OakCreateLabel(@"Non-text files:"),         nonTextFilesTextField                    ],
-		@[ ],
-		@[ OakCreateLabel(@"Show command output:"),    showCommandOutputPopUp                   ],
 	]];
 
-	for(NSView* popUpButton in @[ fileBrowserPositionPopUp, showCommandOutputPopUp ])
-		[popUpButton.widthAnchor constraintEqualToAnchor:fileBrowserLocationPopUp.widthAnchor].active = YES;
+	[fileBrowserPositionPopUp.widthAnchor constraintEqualToAnchor:fileBrowserLocationPopUp.widthAnchor].active = YES;
 
 	[excludeFilesTextField.widthAnchor constraintEqualToConstant:360].active = YES;
 	for(NSView* textField in @[ includeFilesTextField, nonTextFilesTextField ])
 		[textField.widthAnchor constraintEqualToAnchor:excludeFilesTextField.widthAnchor].active = YES;
 
-	self.view = OakSetupGridViewWithSeparators(gridView, { 5, 8, 12, 16 });
+	self.view = OakSetupGridViewWithSeparators(gridView, { 5, 8, 12 });
 
 	fileBrowserPathPopUp = fileBrowserLocationPopUp;
 	[self updatePathPopUp];
@@ -197,6 +181,5 @@
 	[excludeFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"excludePattern"               options:nil];
 	[includeFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"includePattern"               options:nil];
 	[nonTextFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"binaryPattern"                options:nil];
-	[showCommandOutputPopUp                   bind:NSSelectedTagBinding toObject:self withKeyPath:@"htmlOutputPlacement"          options:@{ NSValueTransformerNameBindingOption: @"OakHTMLOutputPlacementSettingsTransformer" }];
 }
 @end

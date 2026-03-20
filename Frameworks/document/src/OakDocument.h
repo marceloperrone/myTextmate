@@ -3,8 +3,6 @@
 #import <selection/types.h>
 #import <command/parser.h>
 #import <regexp/find.h> // find::options_t
-#import <scm/scm.h>
-
 extern NSNotificationName const OakDocumentContentDidChangeNotification;
 extern NSNotificationName const OakDocumentMarksDidChangeNotification;
 extern NSNotificationName const OakDocumentWillReloadNotification;
@@ -59,7 +57,6 @@ typedef NS_ENUM(NSInteger, OakDocumentIOResult) {
 @property (nonatomic) NSString* fileType;     // Lazy: Depends on path and firstLine
 @property (nonatomic) NSString* diskEncoding;
 @property (nonatomic) NSString* diskNewlines;
-@property (nonatomic, readonly) scm::status::type scmStatus;
 
 - (NSString*)displayNameWithExtension:(BOOL)flag;
 

@@ -18,9 +18,6 @@
 @property (nonatomic) id                                         fileBrowserHistory;
 @property (nonatomic) CGFloat                                    fileBrowserWidth;
 
-@property (nonatomic) BOOL                                       htmlOutputVisible;
-@property (nonatomic) NSSize                                     htmlOutputSize;
-
 + (BOOL)restoreSession;
 + (void)disableSessionSave;
 + (void)enableSessionSave;
@@ -44,8 +41,6 @@
 
 - (NSPoint)positionForWindowUnderCaret;
 - (void)performBundleItem:(bundles::item_ptr)anItem;
-- (IBAction)toggleHTMLOutput:(id)sender;
-
 - (IBAction)moveFocus:(id)sender;
 
 - (IBAction)performCloseTab:(id)sender;
@@ -84,7 +79,6 @@
 - (IBAction)goToHome:(id)sender;
 - (IBAction)goToDesktop:(id)sender;
 - (IBAction)goToFavorites:(id)sender;
-- (IBAction)goToSCMDataSource:(id)sender;
 - (IBAction)orderFrontGoToFolder:(id)sender;
 
 // Used by AppController

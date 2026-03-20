@@ -33,9 +33,6 @@ public struct ProjectsSettingsView: View {
     @AppStorage(DefaultsKey.disableTabAutoClose)
     private var disableTabAutoClose = false
 
-    @AppStorage(DefaultsKey.htmlOutputPlacement)
-    private var htmlOutputPlacement = "window"
-
     @State private var excludePattern = ""
     @State private var includePattern = ""
     @State private var binaryPattern = ""
@@ -97,13 +94,6 @@ public struct ProjectsSettingsView: View {
                     }
             }
 
-            Section("Command Output") {
-                Picker("Show command output:", selection: $htmlOutputPlacement) {
-                    Text("Below text view").tag("bottom")
-                    Text("Right of text view").tag("right")
-                    Text("New window").tag("window")
-                }
-            }
         }
         .formStyle(.grouped)
         .onAppear(perform: loadSettings)

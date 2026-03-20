@@ -109,21 +109,32 @@ struct data_source_t
 	[NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
+// =================
+// = Scroll offset =
+// =================
+
+- (CGFloat)scrollOffsetY
+{
+	return _partnerView ? NSMinY(_partnerView.enclosingScrollView.contentView.bounds) : 0;
+}
+
 - (void)setupSelectionRects
 {
 	backgroundRects.clear();
 	borderRects.clear();
 
+	CGFloat offset = [self scrollOffsetY];
+
 	for(auto const& range : text::selection_t(highlightedRange))
 	{
 		auto from = range.min(), to = range.max();
-		CGFloat firstY = [self.delegate lineFragmentForLine:from.line column:from.column].firstY;
+		CGFloat firstY = [self.delegate lineFragmentForLine:from.line column:from.column].firstY - offset;
 		auto fragment = [self.delegate lineFragmentForLine:to.line column:to.column];
-		CGFloat lastY = to.column == 0 && from.line != to.line ? fragment.firstY : fragment.lastY;
+		CGFloat lastY = (to.column == 0 && from.line != to.line ? fragment.firstY : fragment.lastY) - offset;
 
-		backgroundRects.push_back(CGRectMake(0, firstY+1, self.frame.size.width, lastY - firstY - 2));
-		borderRects.push_back(CGRectMake(0, firstY, self.frame.size.width, 1));
-		borderRects.push_back(CGRectMake(0, lastY-1, self.frame.size.width, 1));
+		backgroundRects.push_back(CGRectMake(0, firstY+1, self.bounds.size.width, lastY - firstY - 2));
+		borderRects.push_back(CGRectMake(0, firstY, self.bounds.size.width, 1));
+		borderRects.push_back(CGRectMake(0, lastY-1, self.bounds.size.width, 1));
 	}
 }
 
@@ -133,17 +144,8 @@ struct data_source_t
 
 - (void)setHighlightedRange:(std::string const&)str
 {
-	std::vector<CGRect> oldBackgroundRects, oldBorderRects, refreshRects;
-	backgroundRects.swap(oldBackgroundRects);
-	borderRects.swap(oldBorderRects);
-
 	highlightedRange = str;
-	[self setupSelectionRects];
-
-	OakRectSymmetricDifference(oldBackgroundRects, backgroundRects,    back_inserter(refreshRects));
-	OakRectSymmetricDifference(oldBorderRects,     borderRects,        back_inserter(refreshRects));
-	for(auto const& rect : refreshRects)
-		[self setNeedsDisplayInRect:rect];
+	[self setNeedsDisplay:YES];
 }
 
 - (void)setPartnerView:(NSView*)aView
@@ -243,7 +245,7 @@ struct data_source_t
 - (void)boundsDidChange:(NSNotification*)aNotification
 {
 	[self updateSize];
-	[self.enclosingScrollView.contentView scrollToPoint:NSMakePoint(0, NSMinY(_partnerView.enclosingScrollView.contentView.bounds))];
+	[self setNeedsDisplay:YES];
 }
 
 - (void)setSize:(NSSize)newSize
@@ -308,41 +310,50 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 
 - (void)drawRect:(NSRect)aRect
 {
-	[self.backgroundColor set];
-	NSRectFill(NSIntersectionRect(aRect, self.frame));
+	CGFloat offset = [self scrollOffsetY];
 
+	// Fill background
+	[self.backgroundColor set];
+	NSRectFill(NSIntersectionRect(aRect, self.bounds));
+
+	// Selection highlights (already in view coordinates via setupSelectionRects)
 	[self setupSelectionRects];
 
 	[self.selectionBackgroundColor set];
 	for(auto const& rect : backgroundRects)
-		NSRectFillUsingOperation(NSIntersectionRect(rect, NSIntersectionRect(aRect, self.frame)), NSCompositingOperationSourceOver);
+		NSRectFillUsingOperation(NSIntersectionRect(rect, NSIntersectionRect(aRect, self.bounds)), NSCompositingOperationSourceOver);
 
 	[self.selectionBorderColor set];
 	for(auto const& rect : borderRects)
-		NSRectFillUsingOperation(NSIntersectionRect(rect, NSIntersectionRect(aRect, self.frame)), NSCompositingOperationSourceOver);
+		NSRectFillUsingOperation(NSIntersectionRect(rect, NSIntersectionRect(aRect, self.bounds)), NSCompositingOperationSourceOver);
 
 	if(!self.antiAlias)
 		CGContextSetShouldAntialias(NSGraphicsContext.currentContext.CGContext, false);
 
+	// Draw line numbers — translate view Y to document Y for lookups
 	std::pair<NSUInteger, NSUInteger> prevLine(NSNotFound, 0);
 	for(CGFloat y = NSMinY(aRect); y < NSMaxY(aRect); )
 	{
-		GVLineRecord record = [self.delegate lineRecordForPosition:y];
-		if(record.lastY <= y || prevLine == std::make_pair(record.lineNumber, record.softlineOffset))
+		GVLineRecord record = [self.delegate lineRecordForPosition:y + offset];
+		if(record.lastY <= y + offset || prevLine == std::make_pair(record.lineNumber, record.softlineOffset))
 			break;
 		prevLine = std::make_pair(record.lineNumber, record.softlineOffset);
 
+		// Convert document coordinates to view coordinates
+		CGFloat viewFirstY  = record.firstY - offset;
+		CGFloat viewLastY   = record.lastY - offset;
+
 		BOOL selectedRow = NO;
 		for(auto const& rect : backgroundRects)
-			selectedRow = selectedRow || NSIntersectsRect(rect, NSMakeRect(0, record.firstY, CGRectGetWidth(self.frame), record.lastY - record.firstY));
+			selectedRow = selectedRow || NSIntersectsRect(rect, NSMakeRect(0, viewFirstY, CGRectGetWidth(self.bounds), viewLastY - viewFirstY));
 
 		for(auto const& dataSource : [self visibleColumnDataSources])
 		{
-			NSRect columnRect = NSMakeRect(dataSource.x0, record.firstY, dataSource.width, record.lastY - record.firstY);
+			NSRect columnRect = NSMakeRect(dataSource.x0, viewFirstY, dataSource.width, viewLastY - viewFirstY);
 			if(dataSource.identifier == GVLineNumbersColumnIdentifier.UTF8String)
 			{
 				NSColor* textColor = selectedRow ? self.selectionForegroundColor : self.foregroundColor;
-				DrawText(record.softlineOffset == 0 ? std::to_string(record.lineNumber + 1) : "·", columnRect, NSMinY(columnRect) + record.baseline, self.lineNumberFont, textColor);
+				DrawText(record.softlineOffset == 0 ? std::to_string(record.lineNumber + 1) : "·", columnRect, viewFirstY + record.baseline, self.lineNumberFont, textColor);
 			}
 			else if(record.softlineOffset == 0)
 			{
@@ -359,11 +370,10 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 				NSImage* image = [self imageForColumn:dataSource.identifier atLine:record.lineNumber hovering:isHoveringRect && NSEqualPoints(mouseDownAtPoint, NSMakePoint(-1, -1)) pressed:isHoveringRect && isDownInRect];
 				if([image size].height > 0 && [image size].width > 0)
 				{
-					// The placement of the center of image is aligned with the center of the capHeight.
 					CGFloat center = record.baseline - ([self.lineNumberFont capHeight] / 2);
 					CGFloat x = round((NSWidth(columnRect) - [image size].width) / 2);
 					CGFloat y = round(center - ([image size].height / 2));
-					NSRect imageRect = NSMakeRect(NSMinX(columnRect) + x, NSMinY(columnRect) + y, [image size].width, [image size].height);
+					NSRect imageRect = NSMakeRect(NSMinX(columnRect) + x, viewFirstY + y, [image size].width, [image size].height);
 
 					if(image.isTemplate)
 					{
@@ -389,7 +399,7 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 			}
 		}
 
-		y = record.lastY;
+		y = record.lastY - offset;
 	}
 }
 
@@ -413,14 +423,13 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 		}
 	}
 
-	NSPoint origin = NSMakePoint(0, NSMinY(_partnerView.enclosingScrollView.contentView.bounds));
-	CGFloat height = std::max(NSHeight(_partnerView.frame), origin.y + NSHeight([self visibleRect]));
-	[self setSize:NSMakeSize(totalWidth, height)];
+	// Only width is intrinsic — height comes from auto layout constraints
+	[self setSize:NSMakeSize(totalWidth, 0)];
 }
 
 - (NSSize)intrinsicContentSize
 {
-	return self.size;
+	return NSMakeSize(self.size.width, NSViewNoIntrinsicMetric);
 }
 
 - (void)reloadData:(id)sender
@@ -431,15 +440,19 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 
 - (NSRect)columnRectForPoint:(NSPoint)aPoint
 {
-	GVLineRecord record = [self.delegate lineRecordForPosition:aPoint.y];
+	CGFloat offset = [self scrollOffsetY];
+	GVLineRecord record = [self.delegate lineRecordForPosition:aPoint.y + offset];
 	if(record.lineNumber != NSNotFound && record.softlineOffset == 0)
 	{
+		CGFloat viewFirstY = record.firstY - offset;
+		CGFloat viewLastY  = record.lastY - offset;
+
 		for(auto const& dataSource : [self visibleColumnDataSources])
 		{
 			if(dataSource.identifier == [GVLineNumbersColumnIdentifier UTF8String])
 				continue;
 
-			NSRect columnRect = NSMakeRect(dataSource.x0, record.firstY, dataSource.width, record.lastY - record.firstY);
+			NSRect columnRect = NSMakeRect(dataSource.x0, viewFirstY, dataSource.width, viewLastY - viewFirstY);
 			if(NSPointInRect(aPoint, columnRect))
 				return columnRect;
 		}
@@ -449,6 +462,7 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 
 - (void)mouseDown:(NSEvent*)event
 {
+	CGFloat offset = [self scrollOffsetY];
 	NSPoint pos = [self convertPoint:[event locationInWindow] fromView:nil];
 	NSRect columnRect = [self columnRectForPoint:pos];
 	if(NSMouseInRect(pos, columnRect, [self isFlipped]))
@@ -465,10 +479,12 @@ static void DrawText (std::string const& text, CGRect const& rect, CGFloat basel
 
 		if(NSEqualRects(columnRect, [self columnRectForPoint:mouseHoveringAtPoint]))
 		{
-			GVLineRecord record = [self.delegate lineRecordForPosition:mouseDownAtPoint.y];
+			GVLineRecord record = [self.delegate lineRecordForPosition:mouseDownAtPoint.y + offset];
 			for(auto const& dataSource : [self visibleColumnDataSources])
 			{
-				NSRect columnRect = NSMakeRect(dataSource.x0, record.firstY, dataSource.width, record.lastY - record.firstY);
+				CGFloat viewFirstY = record.firstY - offset;
+				CGFloat viewLastY  = record.lastY - offset;
+				NSRect columnRect = NSMakeRect(dataSource.x0, viewFirstY, dataSource.width, viewLastY - viewFirstY);
 				if(NSPointInRect(mouseDownAtPoint, columnRect))
 					[dataSource.delegate userDidClickColumnWithIdentifier:[NSString stringWithCxxString:dataSource.identifier] atLine:record.lineNumber];
 			}

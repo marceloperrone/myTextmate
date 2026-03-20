@@ -85,6 +85,5 @@ public struct FileBrowserHeaderView: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(.bar)
     }
 }

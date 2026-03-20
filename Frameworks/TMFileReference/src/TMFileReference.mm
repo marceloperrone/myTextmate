@@ -131,20 +131,6 @@ NSNotificationName const TMURLWillCloseNotification = @"TMURLWillCloseNotificati
 // = Image =
 // =========
 
-- (void)setSCMStatus:(scm::status::type)newSCMStatus
-{
-	if(_SCMStatus == newSCMStatus)
-		return;
-	_SCMStatus = newSCMStatus;
-
-	if(_image)
-	{
-		[self willChangeValueForKey:@"image"];
-		_image = nil;
-		[self didChangeValueForKey:@"image"];
-	}
-}
-
 static NSImage* ImageNamed (NSString* imageName)
 {
 	if(!imageName)
@@ -179,18 +165,13 @@ static NSImage* ImageNamed (NSString* imageName)
 
 	if(!_image)
 	{
-		NSURL* url                  = _URL;
-		scm::status::type scmStatus = _SCMStatus;
+		NSURL* url = _URL;
 
 		_image = [NSImage imageWithSize:NSMakeSize(16, 16) flipped:NO drawingHandler:^BOOL(NSRect dstRect){
 			BOOL drawLinkBadge = NO;
 
 			NSImage* image;
-			if(scmStatus == scm::status::deleted)
-			{
-				image = [NSWorkspace.sharedWorkspace iconForFileType:NSFileTypeForHFSTypeCode((OSType)kUnknownFSObjectIcon)];
-			}
-			else if(url.isFileURL)
+			if(url.isFileURL)
 			{
 				NSError* error;
 				if(!url.hasDirectoryPath)
@@ -234,23 +215,6 @@ static NSImage* ImageNamed (NSString* imageName)
 			}
 
 			[image drawInRect:dstRect fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1];
-
-			if(scmStatus != scm::status::none)
-			{
-				NSImage* badge;
-				switch(scmStatus)
-				{
-					case scm::status::conflicted:   badge = ImageNamed(@"scm-badge-conflicted");  break;
-					case scm::status::modified:     badge = ImageNamed(@"scm-badge-modified");    break;
-					case scm::status::added:        badge = ImageNamed(@"scm-badge-added");       break;
-					case scm::status::deleted:      badge = ImageNamed(@"scm-badge-deleted");     break;
-					case scm::status::unversioned:  badge = ImageNamed(@"scm-badge-unversioned"); break;
-					case scm::status::mixed:        badge = ImageNamed(@"scm-badge-mixed");       break;
-				}
-
-				if(badge)
-					[badge drawInRect:dstRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
-			}
 
 			if(drawLinkBadge)
 			{

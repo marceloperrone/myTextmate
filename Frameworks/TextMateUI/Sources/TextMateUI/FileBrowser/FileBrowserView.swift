@@ -31,17 +31,6 @@ public struct FileBrowserView: View {
                 fileTreeList
             }
 
-            Divider()
-
-            // Actions bar
-            FileBrowserActionsView(
-                onCreateFile: { _ = model.createFile(nil) },
-                onCreateFolder: { _ = model.createFolder(nil) },
-                onReload: { model.reload(nil) },
-                onSearch: { /* TODO: Trigger folder search */ },
-                onShowFavorites: { /* TODO: Show favorites panel */ },
-                onShowSCMStatus: { /* TODO: Show SCM status view */ }
-            )
         }
         .frame(minWidth: 200)
         .onAppear {

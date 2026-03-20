@@ -416,6 +416,7 @@ struct document_view_t : ng::buffer_api_t
 	void set_wrapping (bool softWrap, size_t wrapColumn) { _layout->set_wrapping(softWrap, wrapColumn); }
 	void set_scroll_past_end (bool scrollPastEnd) { _layout->set_scroll_past_end(scrollPastEnd); }
 	ng::layout_t::margin_t const& margin () const { return _layout->margin(); }
+	void set_margin (ng::layout_t::margin_t const& margin) { _layout->set_margin(margin); }
 	bool soft_wrap () const { return _layout->soft_wrap(); }
 	size_t wrap_column () const { return _layout->wrap_column(); }
 	void set_draw_as_key (bool isKey) { _layout->set_is_key(isKey); }
@@ -536,7 +537,6 @@ private:
 @property (nonatomic, readonly) links_ptr links;
 @property (nonatomic) BOOL needsEnsureSelectionIsInVisibleArea;
 @property (nonatomic, readwrite) NSString* symbol;
-@property (nonatomic) scm::status::type scmStatus;
 @end
 
 static std::vector<bundles::item_ptr> items_for_tab_expansion (std::shared_ptr<document_view_t> const& documentView, ng::ranges_t const& ranges, std::string const& scopeAttributes, ng::range_t* range)
@@ -888,13 +888,17 @@ static std::string shell_quote (std::vector<std::string> paths)
 
 	if(_document = aDocument)
 	{
-		_scmStatus = scm::status::unknown;
-
 		[self willChangeValueForKey:@"themeUUID"];
 		_themeUUID = self.effectiveThemeUUID;
 		[self didChangeValueForKey:@"themeUUID"];
 
 		documentView = std::make_shared<document_view_t>(_document, _themeUUID, to_s(self.scopeAttributes), self.scrollPastEnd, fontScaleFactor);
+
+		ng::layout_t::margin_t margin(8);
+		margin.left  = 50;
+		margin.right = 50;
+		documentView->set_margin(margin);
+
 		documentView->set_command_runner([self](bundle_command_t const& cmd, ng::buffer_api_t const& buffer, ng::ranges_t const& selection, std::map<std::string, std::string> const& variables){
 			[self executeBundleCommand:cmd buffer:buffer selection:selection variables:variables];
 		});
@@ -979,40 +983,14 @@ static std::string shell_quote (std::vector<std::string> paths)
 
 		[self registerForDraggedTypes:[[self class] dropTypes]];
 
-		[self bind:@"scmStatus" toObject:self withKeyPath:@"document.scmStatus" options:nil];
 		OakObserveUserDefaults(self);
 	}
 	return self;
 }
 
-- (void)setScmStatus:(scm::status::type)newStatus
-{
-	if(_scmStatus == newStatus)
-		return;
-
-	BOOL notifyHooks = _scmStatus != scm::status::unknown || newStatus != scm::status::none;
-	_scmStatus = newStatus;
-	if(notifyHooks)
-		[self performSelector:@selector(runDidChangeSCMStatusCallbacks:) withObject:self afterDelay:0];
-}
-
-- (void)runDidChangeSCMStatusCallbacks:(id)sender
-{
-	for(auto const& item : bundles::query(bundles::kFieldSemanticClass, "callback.document.did-change-scm-status", [self scopeContext], bundles::kItemTypeMost, oak::uuid_t(), false))
-		[self performBundleItem:item];
-}
-
-- (void)setNilValueForKey:(NSString*)key
-{
-	// scmStatus can be nil because we bind to self.document.scmStatus
-	if(![key isEqualToString:@"scmStatus"])
-		[super setNilValueForKey:key];
-}
-
 - (void)dealloc
 {
 	[NSNotificationCenter.defaultCenter removeObserver:self];
-	[self unbind:@"scmStatus"];
 	[self setDocument:nil];
 }
 
@@ -3136,9 +3114,7 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 				auto command = parse_command(bundleItem);
 				if(command.auto_refresh != auto_refresh::never)
 				{
-					BOOL shouldTeardown = NO;
-					if(OakCommandRefresher* refresher = [self existingRefresherForCommand:command])
-						shouldTeardown = !refresher.command.htmlOutputView;
+					BOOL shouldTeardown = [self existingRefresherForCommand:command] != nil;
 					[aMenuItem updateTitle:to_ns(format_string::expand(shouldTeardown ? "$2 $3" : "$1 $3", m.captures()))];
 				}
 			}
@@ -4501,9 +4477,7 @@ static scope::context_t add_modifiers_to_scope (scope::context_t scope, NSUInteg
 {
 	if(OakCommandRefresher* refresher = [self existingRefresherForCommand:aBundleCommand])
 	{
-		if(refresher.command.htmlOutputView)
-				[refresher bringHTMLOutputToFront:self];
-		else	[refresher teardown];
+		[refresher teardown];
 		return;
 	}
 

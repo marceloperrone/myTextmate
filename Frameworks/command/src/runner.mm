@@ -168,7 +168,7 @@ namespace command
 	// = Command Runner =
 	// ==================
 
-	runner_t::runner_t (bundle_command_t const& command, ng::buffer_api_t const& buffer, ng::ranges_t const& selection, std::map<std::string, std::string> const& environment, std::string const& pwd, delegate_ptr delegate) : _command(command), _environment(environment), _directory(pwd), _delegate(delegate), _input_was_selection(false), _did_detach(false)
+	runner_t::runner_t (bundle_command_t const& command, ng::buffer_api_t const& buffer, ng::ranges_t const& selection, std::map<std::string, std::string> const& environment, std::string const& pwd, delegate_ptr delegate) : _command(command), _environment(environment), _directory(pwd), _delegate(delegate), _input_was_selection(false)
 	{
 		_dispatch_group = dispatch_group_create();
 		fix_shebang(&_command.command);
@@ -191,9 +191,8 @@ namespace command
 		std::tie(stdinRead, stdinWrite) = io::create_pipe();
 		_input_ranges = _command.input == input::nothing ? (close(stdinWrite), ng::ranges_t()) : _delegate->write_unit_to_fd(stdinWrite, _command.input, _command.input_fallback, _command.input_format, _command.scope_selector, _environment, &_input_was_selection);
 
-		auto textOutHandler = ^(char const* bytes, size_t len) { _out.insert(_out.end(), bytes, bytes + len); };
-		auto htmlOutHandler = ^(char const* bytes, size_t len) { send_html_data(bytes, len); };
-		auto stderrHandler  = ^(char const* bytes, size_t len) { _err.insert(_err.end(), bytes, bytes + len); };
+		auto stdoutHandler = ^(char const* bytes, size_t len) { _out.insert(_out.end(), bytes, bytes + len); };
+		auto stderrHandler = ^(char const* bytes, size_t len) { _err.insert(_err.end(), bytes, bytes + len); };
 
 		runner_ptr runner = shared_from_this();
 		auto completionHandler = ^(int rc) {
@@ -203,27 +202,13 @@ namespace command
 			[NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:NULL subtype:0 data1:0 data2:0] atStart:NO];
 		};
 
-		bool hasHTMLOutput = _command.output == output::new_window && _command.output_format == output_format::html;
-		_process_id = run_command(_dispatch_group, _temp_path, stdinRead, _environment, _directory, CFRunLoopGetCurrent(), hasHTMLOutput ? htmlOutHandler : textOutHandler, stderrHandler, completionHandler);
-
-		if(hasHTMLOutput)
-		{
-			_delegate->detach();
-			_did_detach = true;
-		}
-	}
-
-	void runner_t::send_html_data (char const* bytes, size_t len)
-	{
-		_did_send_html = true;
-		_delegate->accept_html_data(shared_from_this(), bytes, len);
-		_callbacks(&callback_t::output, shared_from_this(), bytes, len);
+		_process_id = run_command(_dispatch_group, _temp_path, stdinRead, _environment, _directory, CFRunLoopGetCurrent(), stdoutHandler, stderrHandler, completionHandler);
 	}
 
 	void runner_t::wait ()
 	{
 		NSMutableArray* queuedEvents = [NSMutableArray array];
-		while(_process_id != -1 && !_did_detach)
+		while(_process_id != -1)
 		{
 			// We use CFRunLoopRunInMode() to handle dispatch queues and nextEventMatchingMask:… to catcn ⌃C
 			CFRunLoopRunInMode(kCFRunLoopDefaultMode, 5, true);
@@ -261,24 +246,7 @@ namespace command
 	{
 		if(_process_id == -1)
 			return;
-
-		if(_did_detach)
-		{
-			__block bool shouldWait = true;
-			CFRunLoopRef runLoop = CFRunLoopGetCurrent();
-
-			dispatch_group_notify(_dispatch_group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-				shouldWait = false;
-				CFRunLoopStop(runLoop);
-			});
-
-			while(shouldWait)
-				CFRunLoopRun();
-		}
-		else
-		{
-			wait();
-		}
+		wait();
 	}
 
 	void runner_t::did_exit (int status)
@@ -322,7 +290,7 @@ namespace command
 				format = output_format::snippet;
 			}
 			break;
-			case exit_show_html:           placement = output::new_window;        format = output_format::html;    break;
+			case exit_show_html:           placement = output::discard;                                            break;
 			case exit_show_tool_tip:       placement = output::tool_tip;          format = output_format::text;    break;
 			case exit_create_new_document: placement = output::new_window;        format = output_format::text;    break;
 		}
@@ -336,15 +304,6 @@ namespace command
 			if(format == output_format::text)
 			{
 				_delegate->show_document(_err + _out);
-			}
-			else if(format == output_format::html)
-			{
-				bool outputWasHTML = _command.output == output::new_window && _command.output_format == output_format::html;
-				if(!outputWasHTML)
-					send_html_data(_out.data(), _out.size());
-
-				if(!_err.empty())
-					send_html_data(_err.data(), _err.size());
 			}
 		}
 		else if(placement == output::tool_tip)
@@ -381,11 +340,6 @@ namespace command
 
 			_delegate->accept_result(_out, placement, format, outputCaret, _input_ranges, _environment);
 		}
-		else if(_did_send_html)
-		{
-			_delegate->discard_html();
-		}
-
 		_delegate->done();
 		_delegate.reset();
 

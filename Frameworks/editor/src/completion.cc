@@ -32,8 +32,6 @@ namespace ng
 			return ng::write_unit_to_fd(buffer, ranges, buffer.indent().tab_size(), fd, unit, fallbackUnit, format, scopeSelector, variables, inputWasSelection);
 		}
 
-		bool accept_html_data (command::runner_ptr runner, char const* data, size_t len) { return fprintf(stderr, "html: %.*s", (int)len, data), false; }
-
 		void show_document (std::string const& str) { fprintf(stderr, "document: %s\n", str.c_str()); }
 		void show_tool_tip (std::string const& str) { fprintf(stderr, "tool tip: %s\n", str.c_str()); }
 		void show_error (bundle_command_t const& command, int rc, std::string const& out, std::string const& err) { fprintf(stderr, "error: %s%s\n", out.c_str(), err.c_str()); }

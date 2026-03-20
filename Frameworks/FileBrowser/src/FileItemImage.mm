@@ -1,19 +1,17 @@
 #import "FileItemImage.h"
 #import <TMFileReference/TMFileReference.h>
 
-NSImage* CreateIconImageForURL (NSURL* url, BOOL isModified, BOOL isMissing, BOOL isDirectory, BOOL isSymbolicLink, scm::status::type scmStatus)
+NSImage* CreateIconImageForURL (NSURL* url, BOOL isModified, BOOL isMissing, BOOL isDirectory, BOOL isSymbolicLink)
 {
 	NSImage* res;
 
-	if(isMissing && (scmStatus == scm::status::none || scmStatus == scm::status::unknown))
+	if(isMissing)
 	{
 		res = [NSWorkspace.sharedWorkspace iconForFileType:NSFileTypeForHFSTypeCode(kUnknownFSObjectIcon)];
 	}
 	else
 	{
 		TMFileReference* fileReference = [TMFileReference fileReferenceWithURL:url];
-		if(scmStatus != scm::status::unknown)
-			fileReference.SCMStatus = scmStatus;
 		res = fileReference.image;
 	}
 

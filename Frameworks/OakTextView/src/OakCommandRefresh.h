@@ -11,7 +11,6 @@ typedef NS_OPTIONS(NSUInteger, OakCommandRefresherOptions) {
 @interface OakCommandRefresher : NSResponder
 + (OakCommandRefresher*)scheduleRefreshForCommand:(OakCommand*)aCommand document:(OakDocument*)document window:(NSWindow*)window options:(OakCommandRefresherOptions)options variables:(std::map<std::string, std::string> const&)variables;
 + (OakCommandRefresher*)findRefresherForCommandUUID:(NSUUID*)anIdentifier document:(OakDocument*)document window:(NSWindow*)window;
-- (void)bringHTMLOutputToFront:(id)sender;
 - (void)teardown;
 @property (nonatomic, readonly) OakCommand* command;
 @end

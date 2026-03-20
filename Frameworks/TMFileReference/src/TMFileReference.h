@@ -1,5 +1,3 @@
-#import <scm/status.h>
-
 NS_ASSUME_NONNULL_BEGIN
 
 extern NSNotificationName const TMURLWillCloseNotification;
@@ -15,12 +13,6 @@ extern NSNotificationName const TMURLWillCloseNotification;
 @property (nonatomic, readonly, getter = isModified) BOOL     modified;
 
 - (void)performClose:(id)sender;
-
-// ==================================================================
-// = These methods are for “owners”, e.g. TMDocument and SCMManager =
-// ==================================================================
-
-@property (nonatomic) scm::status::type SCMStatus;
 
 - (void)increaseOpenCount;
 - (void)decreaseOpenCount;

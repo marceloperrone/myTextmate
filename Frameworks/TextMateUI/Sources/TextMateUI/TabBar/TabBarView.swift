@@ -36,7 +36,7 @@ public struct TabBarView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .gesture(
             TapGesture(count: 2).onEnded {
                 model.doubleClickBackground()
@@ -144,6 +144,7 @@ private struct TabItemView: View {
                 .truncationMode(.middle)
                 .foregroundStyle(isSelected ? .primary : .secondary)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background { tabBackground }
@@ -159,24 +160,23 @@ private struct TabItemView: View {
 
     @ViewBuilder
     private var closeOrModifiedIndicator: some View {
-        if tab.isModified && !isHovered {
-            Circle()
-                .fill(Color(nsColor: .controlAccentColor))
-                .frame(width: 7, height: 7)
-                .frame(width: 18, height: 18)
-        } else if isHovered {
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Circle())
+        ZStack {
+            if tab.isModified && !isHovered {
+                Circle()
+                    .fill(Color(nsColor: .controlAccentColor))
+                    .frame(width: 7, height: 7)
+            } else if isHovered {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-        } else {
-            Color.clear
-                .frame(width: 0, height: 18)
         }
+        .frame(width: 18, height: 18)
     }
 
     // MARK: - Background
@@ -184,9 +184,15 @@ private struct TabItemView: View {
     @ViewBuilder
     private var tabBackground: some View {
         if isSelected {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+            if #available(macOS 26.0, *) {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(.clear)
+                    .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+            }
         } else if isHovered {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(.ultraThinMaterial)

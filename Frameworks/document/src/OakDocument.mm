@@ -175,7 +175,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 @interface OakDocument ()
 {
 	NSHashTable* _documentEditors;
-	scm::status::type _scmStatus;
 	NSImage* _icon;
 	BOOL _iconIsModified;
 	BOOL _iconIsOnDisk;
@@ -202,11 +201,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 @property (nonatomic, readonly) BOOL shouldSniffFileType;
 @property (nonatomic) TMFileReference* fileReference;
 
-@property (nonatomic) BOOL                               observeSCMStatus;
-@property (nonatomic) scm::info_ptr                      scmInfo;
-@property (nonatomic) std::map<std::string, std::string> scmVariables;
-@property (nonatomic, readwrite) scm::status::type       scmStatus;
-
 @property (nonatomic) NSArray<void(^)(OakDocumentIOResult, NSString*, oak::uuid_t const&)>* loadCompletionHandlers;
 
 // These are also exposed in ‘OakDocument Private.h’
@@ -216,7 +210,7 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 @implementation OakDocument
 + (NSSet*)keyPathsForValuesAffectingIcon
 {
-	return [NSSet setWithObjects:@"path", @"onDisk", @"virtualPath", @"documentEdited", @"scmStatus", nil];
+	return [NSSet setWithObjects:@"path", @"onDisk", @"virtualPath", @"documentEdited", nil];
 }
 
 + (NSSet*)keyPathsForValuesAffectingDisplayName
@@ -426,7 +420,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	self.fileReference = nil;
 
 	[OakDocumentController.sharedInstance unregister:self];
-	self.observeSCMStatus = NO;
 	[self deleteBuffer];
 	[self removeBackup];
 }
@@ -504,12 +497,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	{
 		self.observeFileSystem = NO;
 		self.observeFileSystem = _path ? YES : NO;
-	}
-
-	if(_observeSCMStatus)
-	{
-		self.observeSCMStatus = NO;
-		self.observeSCMStatus = _path ? YES : NO;
 	}
 
 	if(self.isLoaded)
@@ -1160,9 +1147,8 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	// Ideally we would nil the icon in setModified: or setOnDisk: but we don’t implement these
 	if(!_icon || (_iconIsModified != self.isDocumentEdited || _iconIsOnDisk != self.isOnDisk))
 	{
-		self.observeSCMStatus = YES;
 		NSString* path = _virtualPath ?: _path;
-		_icon = CreateIconImageForURL(path ? [NSURL fileURLWithPath:path isDirectory:NO] : nil, self.isDocumentEdited, !self.isOnDisk, NO, NO, _scmStatus);
+		_icon = CreateIconImageForURL(path ? [NSURL fileURLWithPath:path isDirectory:NO] : nil, self.isDocumentEdited, !self.isOnDisk, NO, NO);
 		_iconIsModified = self.isDocumentEdited;
 		_iconIsOnDisk   = self.isOnDisk;
 	}
@@ -1570,57 +1556,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 {
 	OakDocumentEditor* documentEditor = self.documentEditors.firstObject;
 	return [documentEditor handleOutput:string placement:place format:format caret:caret inputRanges:ranges environment:environment];
-}
-
-// ============
-// = SCM Info =
-// ============
-
-- (void)setObserveSCMStatus:(BOOL)flag
-{
-	if(_observeSCMStatus == flag)
-		return;
-	_observeSCMStatus = flag;
-
-	if(flag)
-	{
-		if(_scmInfo = scm::info(path::parent(to_s(self.path))))
-		{
-			_scmStatus    = _scmInfo->status(to_s(self.path));
-			_scmVariables = _scmInfo->scm_variables();
-
-			// We must postpone potential self.scmStatus = «status» when our callstack
-			// is bind:toObject:withKeyPath:options: → scmStatus → setObserveSCMStatus:
-			dispatch_async(dispatch_get_main_queue(), ^{
-				if(_scmInfo)
-				{
-					__weak OakDocument* weakSelf = self;
-					_scmInfo->push_callback(^(scm::info_t const& info){
-						weakSelf.scmStatus    = info.status(to_s(weakSelf.path));
-						weakSelf.scmVariables = info.scm_variables();
-					});
-				}
-			});
-		}
-	}
-	else
-	{
-		_scmInfo.reset();
-	}
-}
-
-- (scm::status::type)scmStatus
-{
-	self.observeSCMStatus = YES;
-	return _scmStatus;
-}
-
-- (void)setScmStatus:(scm::status::type)newStatus
-{
-	if(_scmStatus == newStatus)
-		return;
-	_scmStatus = newStatus;
-	_icon = nil;
 }
 
 // =======================

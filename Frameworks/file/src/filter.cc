@@ -46,7 +46,6 @@ namespace
 	{
 		event_delegate_t (io::bytes_ptr input, filter::callback_ptr context) : _input(input), _context(context) { }
 
-		bool accept_html_data (command::runner_ptr runner, char const* data, size_t len)   { return fprintf(stderr, "html: %.*s", (int)len, data), false; }
 		void show_document (std::string const& str)                                        { fprintf(stderr, "document: %s\n", str.c_str()); }
 		void show_tool_tip (std::string const& str)                                        { fprintf(stderr, "tool tip: %s\n", str.c_str()); }
 		void show_error (bundle_command_t const& command, int rc, std::string const& out, std::string const& err) { _context->filter_error(command, rc, out, err); }

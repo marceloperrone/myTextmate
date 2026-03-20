@@ -8,7 +8,6 @@
 #import <OakFoundation/OakFoundation.h>
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
-#import <scm/scm.h>
 #import <ns/ns.h>
 #import <regexp/glob.h>
 #import <text/format.h>
@@ -27,7 +26,6 @@ static NSString* const kUserDefaultsFileChooserSourceIndexKey = @"fileChooserSou
 
 NSUInteger const kFileChooserAllSourceIndex                = 0;
 NSUInteger const kFileChooserOpenDocumentsSourceIndex      = 1;
-NSUInteger const kFileChooserUncommittedChangesSourceIndex = 2;
 
 @interface FileChooserItem : NSObject
 {
@@ -222,7 +220,6 @@ static NSDictionary* globs_for_path (std::string const& path)
 
 @interface FileChooser ()
 {
-	scm::info_ptr                     _scmInfo;
 	NSMutableArray<FileChooserItem*>* _records;
 
 	NSString* _globString;
@@ -254,7 +251,7 @@ static NSDictionary* globs_for_path (std::string const& path)
 {
 	if((self = [super init]))
 	{
-		_sourceListLabels = @[ @"All", @"Open Documents", @"Uncommitted Documents" ];
+		_sourceListLabels = @[ @"All", @"Open Documents" ];
 		_searchResults = [NSMutableArray array];
 
 		self.tableView.allowsMultipleSelection = YES;
@@ -322,7 +319,6 @@ static NSDictionary* globs_for_path (std::string const& path)
 - (void)windowWillClose:(NSNotification*)aNotification
 {
 	[self stopSearch];
-	_scmInfo.reset();
 	_records = nil;
 
 	self.items = @[ ];
@@ -335,7 +331,6 @@ static NSDictionary* globs_for_path (std::string const& path)
 	{
 		case kFileChooserAllSourceIndex:                src = [self.path stringByAbbreviatingWithTildeInPath]; break;
 		case kFileChooserOpenDocumentsSourceIndex:      src = @"Open Documents";                               break;
-		case kFileChooserUncommittedChangesSourceIndex: src = @"Uncommitted Documents";                        break;
 	}
 	self.window.title = src ?: @"Open Quickly";
 }
@@ -411,19 +406,15 @@ static NSDictionary* globs_for_path (std::string const& path)
 	if(_path == aString || [_path isEqualToString:aString])
 		return;
 	_path = aString;
-	_scmInfo.reset();
 
 	if(_sourceIndex == kFileChooserAllSourceIndex)
 		[self startSearch:_path];
-	else if(_sourceIndex == kFileChooserUncommittedChangesSourceIndex)
-		[self reloadSCMStatus];
 	[self updateWindowTitle];
 }
 
 - (void)reload
 {
 	[self stopSearch];
-	_scmInfo.reset();
 
 	switch(_sourceIndex)
 	{
@@ -439,35 +430,6 @@ static NSDictionary* globs_for_path (std::string const& path)
 			[self addRecordsForDocuments:[OakDocumentController.sharedInstance openDocuments]];
 		}
 		break;
-
-		case kFileChooserUncommittedChangesSourceIndex:
-		{
-			[self reloadSCMStatus];
-		}
-		break;
-	}
-}
-
-- (void)reloadSCMStatus
-{
-	if(!_scmInfo && (_scmInfo = scm::info(to_s(_path))))
-	{
-		_scmInfo->push_callback(^(scm::info_t const& info){
-			if(_sourceIndex == kFileChooserUncommittedChangesSourceIndex)
-				[self reloadSCMStatus];
-		});
-	}
-
-	_records = [NSMutableArray array];
-	if(_scmInfo)
-	{
-		NSMutableArray<OakDocument*>* scmStatus = [NSMutableArray array];
-		for(auto pair : _scmInfo->status())
-		{
-			if(pair.second & (scm::status::modified|scm::status::added|scm::status::deleted|scm::status::conflicted))
-				[scmStatus addObject:[OakDocument documentWithPath:to_ns(pair.first)]];
-		}
-		[self addRecordsForDocuments:scmStatus];
 	}
 }
 

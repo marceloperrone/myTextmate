@@ -108,7 +108,6 @@ public enum DefaultsKey {
     public static let fileBrowserPlacement = "fileBrowserPlacement"
     public static let fileBrowserSingleClickToOpen = "fileBrowserSingleClickToOpen"
     public static let fileBrowserStyle = "fileBrowserStyle"
-    public static let htmlOutputPlacement = "htmlOutputPlacement"
     public static let disableFileBrowserWindowResize = "disableFileBrowserWindowResize"
     public static let autoRevealFile = "autoRevealFile"
     public static let allowExpandingLinks = "allowExpandingLinks"

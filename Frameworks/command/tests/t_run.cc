@@ -21,24 +21,18 @@ static std::string as_str (output::type output)
 
 struct delegate_t : command::delegate_t
 {
-	std::string out, err, html;
+	std::string out, err;
 	int rc;
 	std::string placement;
 	output_format::type format;
 	output_caret::type caret;
 
-	delegate_t () : out(""), err(""), html(""), rc(-42), placement(as_str(output::discard)) { }
+	delegate_t () : out(""), err(""), rc(-42), placement(as_str(output::discard)) { }
 
 	ng::ranges_t write_unit_to_fd (int fd, input::type unit, input::type fallbackUnit, input_format::type format, scope::selector_t const& scopeSelector, std::map<std::string, std::string>& variables, bool* inputWasSelection)
 	{
 		close(fd);
 		return { };
-	}
-
-	bool accept_html_data (command::runner_ptr runner, char const* data, size_t len)
-	{
-		rc = 0;
-		return html.insert(html.end(), data, data + len), true;
 	}
 
 	bool accept_result (std::string const& out, output::type placement, output_format::type format, output_caret::type outputCaret, ng::ranges_t const& inputRanges, std::map<std::string, std::string> const& environment)
@@ -74,7 +68,6 @@ struct delegate_t : command::delegate_t
 		this->rc  = rc;
 	}
 
-	void detach () { }
 	void done ()   { }
 };
 
@@ -124,20 +117,9 @@ void test_new_document ()
 	OAK_ASSERT_EQ(res->rc, 0);
 }
 
-void test_html_success ()
+void test_html_output_discarded ()
 {
-	delegate_ptr res = run_command("echo >&2 Error && echo Hello && true", "showAsHTML");
-	OAK_ASSERT_EQ(res->html, "Hello\nError\n");
-	OAK_ASSERT_EQ(res->out, "");
-	OAK_ASSERT_EQ(res->err, "");
+	delegate_ptr res = run_command("echo Hello && true", "showAsHTML");
+	OAK_ASSERT_EQ(res->placement, as_str(output::discard));
 	OAK_ASSERT_EQ(res->rc, 0);
-}
-
-void test_html_error ()
-{
-	delegate_ptr res = run_command("echo >&2 Error && echo Hello && exit 1", "showAsHTML");
-	OAK_ASSERT_EQ(res->html, "Hello\n");
-	OAK_ASSERT_EQ(res->out, "");
-	OAK_ASSERT_EQ(res->err, "Error\n");
-	OAK_ASSERT_EQ(res->rc, 1);
 }

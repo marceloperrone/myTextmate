@@ -14,8 +14,6 @@
 #import <bundles/wrappers.h>
 #import <regexp/format_string.h>
 #import <OakAppKit/OakToolTip.h>
-#import <HTMLOutput/HTMLOutput.h>
-#import <HTMLOutputWindow/HTMLOutputWindow.h>
 #import <OakSystem/process.h>
 #import <settings/settings.h>
 #import <BundleEditor/BundleEditor.h>
@@ -23,14 +21,9 @@
 NSNotificationName const OakCommandDidTerminateNotification = @"OakCommandDidTerminateNotification";
 NSString* const OakCommandErrorDomain                       = @"com.macromates.TextMate.ErrorDomain";
 
-static NSString* const kOakFileHandleURLScheme = @"x-txmt-filehandle";
-
 @protocol OakCommandDelegate
 - (void)updateEnvironment:(std::map<std::string, std::string>&)res forCommand:(OakCommand*)aCommand;
 - (void)saveAllEditedDocuments:(BOOL)includeAllFlag completionHandler:(void(^)(BOOL didSave))callback;
-
-- (OakHTMLOutputView*)htmlOutputView:(BOOL)createFlag forIdentifier:(NSUUID*)identifier;
-- (void)discardHTMLOutputView:(OakHTMLOutputView*)htmlOutputView;
 
 - (void)showToolTip:(NSString*)aToolTip;
 - (void)showDocument:(OakDocument*)aDocument;
@@ -168,14 +161,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 
 	BOOL _didCheckRequirements;
 	BOOL _didSaveChanges;
-	BOOL _didFindHTMLOutputView;
-
-	OakHTMLOutputView* _htmlOutputView;
-	NSMutableURLRequest* _urlRequest;
-	NSFileHandle* _fileHandleForWritingHTML;
-	dispatch_queue_t _queueForWritingHTML;
-	NSMutableData* _htmlData;
-	HTMLOutputWindowController* _htmlOutputWindowController;
 
 	BOOL _userDidAbort;
 }
@@ -195,75 +180,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 - (NSUUID*)identifier
 {
 	return _bundleCommand.uuid ? [[NSUUID alloc] initWithUUIDString:to_ns(_bundleCommand.uuid)] : nil;
-}
-
-- (void)writeHTMLOutput:(char const*)bytes length:(size_t)len
-{
-	if(bytes && !_htmlOutputView)
-		_htmlOutputView = [self htmlOutputView:YES forIdentifier:self.identifier];
-
-	if(_updateHTMLViewAtomically)
-	{
-		if(bytes)
-		{
-			if(!_htmlData)
-				_htmlData = [NSMutableData dataWithCapacity:len];
-			[_htmlData appendBytes:bytes length:len];
-		}
-		else
-		{
-			[_htmlOutputView setContent:[[NSString alloc] initWithData:_htmlData encoding:NSUTF8StringEncoding]];
-			_htmlData = nil;
-		}
-		return;
-	}
-
-	if(bytes)
-	{
-		if(!_fileHandleForWritingHTML)
-		{
-			NSPipe* pipe = [NSPipe pipe];
-			_fileHandleForWritingHTML = pipe.fileHandleForWriting;
-			_queueForWritingHTML = dispatch_queue_create("org.textmate.write-html", DISPATCH_QUEUE_SERIAL);
-
-			static NSInteger UniqueKey = 0; // Make each URL unique to avoid caching
-
-			_urlRequest = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@://job/%@/%ld", kOakFileHandleURLScheme, to_ns(encode::url_part(_bundleCommand.name)), ++UniqueKey]] cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:FLT_MAX];
-			[NSURLProtocol setProperty:self.identifier forKey:@"commandIdentifier" inRequest:_urlRequest];
-			[NSURLProtocol setProperty:pipe.fileHandleForReading forKey:@"fileHandle" inRequest:_urlRequest];
-			[NSURLProtocol setProperty:@(_processIdentifier) forKey:@"processIdentifier" inRequest:_urlRequest];
-			[NSURLProtocol setProperty:to_ns(_bundleCommand.name) forKey:@"processName" inRequest:_urlRequest];
-			[NSURLProtocol setProperty:self forKey:@"command" inRequest:_urlRequest];
-
-			_htmlOutputView.disableJavaScriptAPI = _bundleCommand.disable_javascript_api;
-			[_htmlOutputView loadRequest:_urlRequest environment:_environment autoScrolls:_bundleCommand.auto_scroll_output];
-		}
-
-		NSData* data = [NSData dataWithBytes:bytes length:len];
-		NSFileHandle* fh = _fileHandleForWritingHTML;
-		dispatch_async(_queueForWritingHTML, ^{
-			ssize_t bytesWritten = write(fh.fileDescriptor, [data bytes], [data length]);
-			if(bytesWritten == -1)
-				perror("HTMLOutput: write");
-		});
-	}
-	else
-	{
-		if(NSFileHandle* fh = std::exchange(_fileHandleForWritingHTML, nil))
-		{
-			dispatch_async(_queueForWritingHTML, ^{
-				[fh closeFile];
-			});
-			_queueForWritingHTML = nil;
-		}
-
-		if(NSMutableURLRequest* request = std::exchange(_urlRequest, nil))
-		{
-			[NSURLProtocol removePropertyForKey:@"command" inRequest:request];
-			[NSURLProtocol removePropertyForKey:@"fileHandle" inRequest:request];
-			[NSURLProtocol removePropertyForKey:@"processIdentifier" inRequest:request];
-		}
-	}
 }
 
 - (void)executeWithInput:(NSFileHandle*)fileHandleForReading variables:(std::map<std::string, std::string> const&)someVariables outputHandler:(void(^)(std::string const& out, output::type placement, output_format::type format, output_caret::type outputCaret, std::map<std::string, std::string> const& environment))handler
@@ -297,11 +213,11 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 
 			std::string message;
 			if(failedRequirement.variable != NULL_STR)
-					message = text::format("This command requires ‘%1$s’ which wasn’t found on your system.\n\nThe following locations were searched:%2$s\n\nIf ‘%1$s’ is installed elsewhere then you need to set %3$s in Preferences → Variables to the full path of where you installed it.", failedRequirement.command.c_str(), ("\n\u2003• " + text::join(paths, "\n\u2003• ")).c_str(), failedRequirement.variable.c_str());
-			else	message = text::format("This command requires ‘%1$s’ which wasn’t found on your system.\n\nThe following locations were searched:%2$s\n\nIf ‘%1$s’ is installed elsewhere then you need to set PATH in Preferences → Variables to include the folder in which it can be found.", failedRequirement.command.c_str(), ("\n\u2003• " + text::join(paths, "\n\u2003• ")).c_str());
+					message = text::format("This command requires '%1$s' which wasn't found on your system.\n\nThe following locations were searched:%2$s\n\nIf '%1$s' is installed elsewhere then you need to set %3$s in Preferences → Variables to the full path of where you installed it.", failedRequirement.command.c_str(), ("\n\u2003• " + text::join(paths, "\n\u2003• ")).c_str(), failedRequirement.variable.c_str());
+			else	message = text::format("This command requires '%1$s' which wasn't found on your system.\n\nThe following locations were searched:%2$s\n\nIf '%1$s' is installed elsewhere then you need to set PATH in Preferences → Variables to include the folder in which it can be found.", failedRequirement.command.c_str(), ("\n\u2003• " + text::join(paths, "\n\u2003• ")).c_str());
 
 			NSMutableDictionary* dict = [NSMutableDictionary dictionaryWithDictionary:@{
-				NSLocalizedDescriptionKey:             [NSString stringWithFormat:@"Unable to run “%.*s”.", (int)_bundleCommand.name.size(), _bundleCommand.name.data()],
+				NSLocalizedDescriptionKey:             [NSString stringWithFormat:@"Unable to run \u201c%.*s\u201d.", (int)_bundleCommand.name.size(), _bundleCommand.name.data()],
 				NSLocalizedRecoverySuggestionErrorKey: to_ns(message),
 			}];
 
@@ -336,39 +252,16 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 		_didSaveChanges = YES;
 	}
 
-	bool hasHTMLOutput = _bundleCommand.output == output::new_window && _bundleCommand.output_format == output_format::html;
-	if(_didFindHTMLOutputView == NO)
-	{
-		if(hasHTMLOutput && (_bundleCommand.output_reuse == output_reuse::reuse_busy || _bundleCommand.output_reuse == output_reuse::abort_and_reuse_busy))
-		{
-			_htmlOutputView = [self htmlOutputView:NO forIdentifier:self.identifier];
-			if(_htmlOutputView && _htmlOutputView.isRunningCommand)
-			{
-				BOOL askUser = _bundleCommand.output_reuse != output_reuse::abort_and_reuse_busy;
-				[_htmlOutputView stopLoadingWithUserInteraction:askUser completionHandler:^(BOOL didStop){
-					if(didStop)
-					{
-						_didFindHTMLOutputView = YES;
-						[self executeWithInput:inputFH outputHandler:handler];
-					}
-				}];
-				return;
-			}
-		}
-		_didFindHTMLOutputView = YES;
-	}
-
 	__block std::string out, err;
 	auto stdoutHandler  = ^(char const* bytes, size_t len) { out.insert(out.end(), bytes, bytes + len); };
 	auto stderrHandler  = ^(char const* bytes, size_t len) { err.insert(err.end(), bytes, bytes + len); };
-	auto htmlOutHandler = ^(char const* bytes, size_t len) { [self writeHTMLOutput:bytes length:len]; };
 
 	std::string const directory = format_string::expand("${TM_DIRECTORY:-${TM_PROJECT_DIRECTORY:-$TMPDIR}}", _environment);
 	std::string const scriptPath = command::create_script_path(_bundleCommand.command);
 	ASSERT(scriptPath != NULL_STR);
 
 	__block BOOL didTerminate = NO;
-	_processIdentifier = run_command(_dispatchGroup, scriptPath, inputFH.fileDescriptor, _environment, directory, CFRunLoopGetCurrent(), hasHTMLOutput ? htmlOutHandler : stdoutHandler, stderrHandler, ^(int status) {
+	_processIdentifier = run_command(_dispatchGroup, scriptPath, inputFH.fileDescriptor, _environment, directory, CFRunLoopGetCurrent(), stdoutHandler, stderrHandler, ^(int status) {
 		_processIdentifier = 0;
 
 		std::string newOut, newErr;
@@ -394,7 +287,7 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 			case exit_replace_text:        placement = output::replace_input;     format = output_format::text;    outputCaret = output_caret::heuristic;             break;
 			case exit_replace_document:    placement = output::replace_document;  format = output_format::text;    outputCaret = output_caret::interpolate_by_line;   break;
 			case exit_insert_text:         placement = output::after_input;       format = output_format::text;    outputCaret = output_caret::after_output;          break;
-			case exit_show_html:           placement = output::new_window;        format = output_format::html;    break;
+			case exit_show_html:           placement = output::discard;                                            break;
 			case exit_show_tool_tip:       placement = output::tool_tip;          format = output_format::text;    break;
 			case exit_create_new_document: placement = output::new_window;        format = output_format::text;    break;
 			case exit_insert_snippet:
@@ -414,7 +307,7 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 		if(normalExit == NO && _userDidAbort == NO)
 		{
 			NSMutableDictionary* dict = [NSMutableDictionary dictionaryWithDictionary:@{
-				NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failure running “%@”.", to_ns(_bundleCommand.name)],
+				NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failure running \u201c%@\u201d.", to_ns(_bundleCommand.name)],
 			}];
 
 			NSMutableArray* buttonLabels = [NSMutableArray arrayWithObject:@"OK"];
@@ -450,16 +343,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 			{
 				[self showDocument:[OakDocument documentWithString:to_ns(err + out) fileType:nil customName:nil]];
 			}
-			else if(format == output_format::html)
-			{
-				if(!hasHTMLOutput)
-					[self writeHTMLOutput:out.data() length:out.size()];
-
-				if(!err.empty())
-					[self writeHTMLOutput:err.data() length:err.size()];
-
-				[self writeHTMLOutput:nullptr length:0];
-			}
 		}
 		else if(placement == output::tool_tip)
 		{
@@ -478,11 +361,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 			else if(out.size() || err.size())
 				[self showDocument:[OakDocument documentWithString:to_ns(err + out) fileType:nil customName:nil]];
 		}
-		else if(_htmlOutputView)
-		{
-			[self writeHTMLOutput:nullptr length:0];
-			[self discardHTMLOutputView:_htmlOutputView];
-		}
 
 		if(_terminationHandler)
 			_terminationHandler(self, normalExit);
@@ -492,9 +370,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 		[NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:NULL subtype:0 data1:0 data2:0] atStart:NO];
 		[NSNotificationCenter.defaultCenter postNotificationName:OakCommandDidTerminateNotification object:self];
 	});
-
-	if(_bundleCommand.output == output::new_window && _bundleCommand.output_format == output_format::html)
-		return;
 
 	if(_modalEventLoopRunner)
 		_modalEventLoopRunner(self, &didTerminate);
@@ -507,11 +382,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 		_userDidAbort = YES;
 		oak::kill_process_group_in_background(_processIdentifier);
 	}
-}
-
-- (void)closeHTMLOutputView
-{
-	[self discardHTMLOutputView:_htmlOutputView];
 }
 
 // =============================
@@ -602,44 +472,6 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 		callback(YES);
 }
 
-- (OakHTMLOutputView*)htmlOutputView:(BOOL)createFlag forIdentifier:(NSUUID*)identifier
-{
-	OakHTMLOutputView* view;
-	if(id target = [self targetForAction:_cmd])
-	{
-		view = [target htmlOutputView:createFlag forIdentifier:identifier];
-	}
-	else
-	{
-		view = _htmlOutputWindowController.htmlOutputView;
-		if(view.needsNewWebView || ![view.commandIdentifier isEqual:identifier])
-			view = nil;
-
-		if(createFlag && (!view || view.isRunningCommand))
-		{
-			_htmlOutputWindowController = [[HTMLOutputWindowController alloc] initWithIdentifier:identifier];
-			view = _htmlOutputWindowController.htmlOutputView;
-		}
-	}
-
-	if(view)
-	{
-		if([view.window.delegate respondsToSelector:@selector(showWindow:)])
-			[view.window.delegate performSelector:@selector(showWindow:) withObject:self];
-		[view.window makeFirstResponder:view.webView];
-	}
-
-	return view;
-}
-
-- (void)discardHTMLOutputView:(OakHTMLOutputView*)htmlOutputView
-{
-	if(id target = [self targetForAction:_cmd])
-		[target discardHTMLOutputView:htmlOutputView];
-	else if(id delegate = htmlOutputView.webView.UIDelegate)
-		[delegate performSelector:@selector(webViewClose:) withObject:htmlOutputView.webView];
-}
-
 - (void)showToolTip:(NSString*)aToolTip
 {
 	if(id target = [self targetForAction:_cmd])
@@ -659,83 +491,5 @@ static pid_t run_command (dispatch_group_t rootGroup, std::string const& cmd, in
 	if(id target = [self targetForAction:_cmd])
 		return [target presentError:anError];
 	return NO;
-}
-@end
-
-// =====================
-// = Custom URL Scheme =
-// =====================
-
-@interface OakFileHandleURLProtocol : NSURLProtocol
-{
-	BOOL _stop;
-}
-@end
-
-@implementation OakFileHandleURLProtocol
-+ (void)load
-{
-	[self registerClass:self];
-	[WebView registerURLSchemeAsLocal:kOakFileHandleURLScheme];
-}
-
-+ (BOOL)canInitWithRequest:(NSURLRequest*)request                            { return [request.URL.scheme isEqualToString:kOakFileHandleURLScheme]; }
-+ (NSURLRequest*)canonicalRequestForRequest:(NSURLRequest*)request           { return request; }
-+ (BOOL)requestIsCacheEquivalent:(NSURLRequest*)a toRequest:(NSURLRequest*)b { return NO; }
-
-// =============================================
-// = These methods might be called in a thread =
-// =============================================
-
-- (void)startLoading
-{
-	NSFileHandle* fileHandle = [NSURLProtocol propertyForKey:@"fileHandle" inRequest:self.request];
-	if(!fileHandle)
-	{
-		NSURLResponse* response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:404 HTTPVersion:@"HTTP/1.1" headerFields:nil];
-		[self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-		[self.client URLProtocolDidFinishLoading:self];
-		NSLog(@"No command output for ‘%@’", self.request.URL);
-		return;
-	}
-
-	NSURLResponse* response = [[NSURLResponse alloc] initWithURL:self.request.URL MIMEType:@"text/html" expectedContentLength:-1 textEncodingName:@"utf-8"];
-	[self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-
-	dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-		int len;
-		char buf[8192];
-		__block BOOL keepRunning = YES;
-		@try {
-			while(keepRunning && (len = read(fileHandle.fileDescriptor, buf, sizeof(buf))) > 0)
-			{
-				NSData* data = [NSData dataWithBytes:buf length:len];
-				dispatch_sync(dispatch_get_main_queue(), ^{
-					if(keepRunning = !_stop)
-						[self.client URLProtocol:self didLoadData:data];
-				});
-			}
-		}
-		@catch(NSException* e) {
-			NSData* data = [[NSString stringWithFormat:@"<p>Exception thrown while reading data: %@.</p>", e.reason] dataUsingEncoding:NSUTF8StringEncoding];
-			dispatch_sync(dispatch_get_main_queue(), ^{
-				if(!_stop)
-					[self.client URLProtocol:self didLoadData:data];
-			});
-		}
-
-		if(len == -1)
-			perror("HTMLOutput: read");
-
-		[fileHandle closeFile];
-		[self.client URLProtocolDidFinishLoading:self];
-	});
-}
-
-- (void)stopLoading
-{
-	_stop = YES;
-	if(pid_t pid = [[NSURLProtocol propertyForKey:@"processIdentifier" inRequest:self.request] intValue])
-		oak::kill_process_group_in_background(pid);
 }
 @end

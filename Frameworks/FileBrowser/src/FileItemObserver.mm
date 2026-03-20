@@ -1,22 +1,14 @@
 #import "FileItem.h"
 #import "FSEventsManager.h"
-#import "SCMManager.h"
-#import <io/path.h>
-#import <ns/ns.h>
 
-// =======================================
-// = File system and SCM status observer =
-// =======================================
+// =============================
+// = File system status observer =
+// =============================
 
 @interface FileSystemObserver : NSObject
 {
 	void(^_handler)(NSArray<NSURL*>*);
-
-	NSArray<NSURL*>* _fsEventsURLs;
-	NSArray<NSURL*>* _scmURLs;
-
 	id _fsEventsObserver;
-	id _scmObserver;
 }
 @end
 
@@ -26,26 +18,10 @@
 	if(self = [super init])
 	{
 		_handler = handler;
-		_scmURLs = @[ ];
 
 		__weak FileSystemObserver* weakSelf = self;
 		_fsEventsObserver = [FSEventsManager.sharedInstance addObserverToDirectoryAtURL:url usingBlock:^(NSURL*){
 			[weakSelf loadContentsOfDirectoryAtURL:url];
-		}];
-
-		_scmObserver = [SCMManager.sharedInstance addObserverToRepositoryAtURL:url usingBlock:^(SCMRepository* repository){
-			NSMutableArray<NSURL*>* urls = [NSMutableArray array];
-
-			std::string const dir = url.fileSystemRepresentation;
-			for(auto pair : repository.status)
-			{
-				if(!(pair.second & scm::status::deleted) || dir != path::parent(pair.first))
-					continue;
-
-				[urls addObject:[NSURL fileURLWithPath:to_ns(pair.first) isDirectory:NO]];
-			}
-
-			[weakSelf updateFSEventsURLs:nil scmURLs:urls];
 		}];
 
 		[self loadContentsOfDirectoryAtURL:url];
@@ -56,7 +32,6 @@
 - (void)dealloc
 {
 	[FSEventsManager.sharedInstance removeObserver:_fsEventsObserver];
-	[SCMManager.sharedInstance removeObserver:_scmObserver];
 }
 
 - (void)loadContentsOfDirectoryAtURL:(NSURL*)url
@@ -65,23 +40,10 @@
 	dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
 		NSArray<NSURL*>* urls = [NSFileManager.defaultManager contentsOfDirectoryAtURL:url includingPropertiesForKeys:@[ NSURLIsDirectoryKey, NSURLIsPackageKey, NSURLIsSymbolicLinkKey, NSURLIsHiddenKey, NSURLLocalizedNameKey, NSURLEffectiveIconKey ] options:0 error:nil];
 		dispatch_async(dispatch_get_main_queue(), ^{
-			[weakSelf updateFSEventsURLs:urls scmURLs:nil];
+			if(FileSystemObserver* strongSelf = weakSelf)
+				strongSelf->_handler(urls);
 		});
 	});
-}
-
-- (void)updateFSEventsURLs:(NSArray<NSURL*>*)fsEventsURLs scmURLs:(NSArray<NSURL*>*)scmURLs
-{
-	_fsEventsURLs = fsEventsURLs ?: _fsEventsURLs;
-	_scmURLs      = scmURLs      ?: _scmURLs;
-
-	if(!_fsEventsURLs)
-		return;
-
-	NSMutableSet* set = [NSMutableSet setWithArray:_fsEventsURLs];
-	[set addObjectsFromArray:_scmURLs];
-
-	_handler(set.allObjects);
 }
 @end
 

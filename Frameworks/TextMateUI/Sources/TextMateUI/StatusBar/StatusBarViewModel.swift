@@ -9,8 +9,6 @@ public final class StatusBarViewModel: NSObject {
 	@objc public var fileType: String = ""
 	@objc public var tabSize: Int = 4
 	@objc public var softTabs: Bool = false
-	@objc public var recordingMacro: Bool = false
-
 	@ObservationIgnored
 	@objc public weak var delegate: AnyObject?
 
@@ -70,10 +68,6 @@ public final class StatusBarViewModel: NSObject {
 
 	public func showTabSizePanel() {
 		_ = target?.perform(NSSelectorFromString("showTabSizeSelectorPanel:"), with: nil)
-	}
-
-	public func toggleMacroRecording() {
-		_ = target?.perform(NSSelectorFromString("toggleMacroRecording:"), with: nil)
 	}
 
 	public override init() {

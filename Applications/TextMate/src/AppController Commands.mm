@@ -12,7 +12,6 @@
 #import <OakFoundation/NSString Additions.h>
 #import <OakCommand/OakCommand.h>
 #import <plist/uuid.h>
-#import <HTMLOutputWindow/HTMLOutputWindow.h>
 
 @implementation AppController (Commands)
 - (void)performBundleItemWithUUIDStringFrom:(id)anArgument

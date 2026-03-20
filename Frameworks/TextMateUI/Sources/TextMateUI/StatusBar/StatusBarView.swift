@@ -5,8 +5,6 @@ import SwiftUI
 public struct StatusBarView: View {
 	@Bindable var model: StatusBarViewModel
 
-	@State private var recordingOpacity: Double = 1.0
-
 	public init(model: StatusBarViewModel) {
 		self.model = model
 	}
@@ -41,10 +39,6 @@ public struct StatusBarView: View {
 				)
 				.frame(minWidth: 50, maxWidth: .infinity)
 
-				statusDivider
-
-				macroRecordingButton
-					.padding(.horizontal, 6)
 			}
 			.padding(.horizontal, 10)
 			.frame(height: 24)
@@ -126,29 +120,6 @@ public struct StatusBarView: View {
 		.menuStyle(.borderlessButton)
 	}
 
-	// MARK: - Macro Recording
-
-	private var macroRecordingButton: some View {
-		Button {
-			model.toggleMacroRecording()
-		} label: {
-			Circle()
-				.fill(.red)
-				.frame(width: 12, height: 12)
-				.opacity(model.recordingMacro ? recordingOpacity : 0.4)
-		}
-		.buttonStyle(.borderless)
-		.accessibilityLabel("Record a macro")
-		.help(model.recordingMacro ? "Click to stop recording" : "Click to start recording a macro")
-		.onChange(of: model.recordingMacro) { _, recording in
-			if recording {
-				startRecordingAnimation()
-			} else {
-				recordingOpacity = 1.0
-			}
-		}
-	}
-
 	// MARK: - Divider
 
 	private var statusDivider: some View {
@@ -156,14 +127,6 @@ public struct StatusBarView: View {
 			.fill(.separator)
 			.frame(width: 1, height: 15)
 			.padding(.horizontal, 4)
-	}
-
-	// MARK: - Recording Animation
-
-	private func startRecordingAnimation() {
-		withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-			recordingOpacity = 0.3
-		}
 	}
 }
 
