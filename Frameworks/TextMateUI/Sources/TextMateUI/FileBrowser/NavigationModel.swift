@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Manages back/forward navigation history for the file browser.
 /// Replaces the navigation tracking in FileBrowserViewController.mm.
+@MainActor
 @Observable
 public final class NavigationModel {
     public var currentURL: URL

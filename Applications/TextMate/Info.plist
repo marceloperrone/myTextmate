@@ -9,7 +9,7 @@
 	<key>CFBundleVersion</key>
 	<string>9800</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.macromates.${TARGET_NAME}</string>
+	<string>com.wonky.works.myTextMate</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
@@ -237,7 +237,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.cgi-script</string>
+				<string>com.wonky.works.myTextMate.cgi-script</string>
 			</array>
 		</dict>
 		<dict>
@@ -249,7 +249,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.config-file</string>
+				<string>com.wonky.works.myTextMate.config-file</string>
 			</array>
 		</dict>
 		<dict>
@@ -417,7 +417,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.gtd</string>
+				<string>com.wonky.works.myTextMate.gtd</string>
 			</array>
 		</dict>
 		<dict>
@@ -453,7 +453,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.include-file</string>
+				<string>com.wonky.works.myTextMate.include-file</string>
 			</array>
 		</dict>
 		<dict>
@@ -585,7 +585,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.lisp</string>
+				<string>com.wonky.works.myTextMate.lisp</string>
 			</array>
 		</dict>
 		<dict>
@@ -609,7 +609,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.logo</string>
+				<string>com.wonky.works.myTextMate.logo</string>
 			</array>
 		</dict>
 		<dict>
@@ -897,7 +897,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.scheme</string>
+				<string>com.wonky.works.myTextMate.scheme</string>
 			</array>
 		</dict>
 		<dict>
@@ -909,7 +909,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.setext</string>
+				<string>com.wonky.works.myTextMate.setext</string>
 			</array>
 		</dict>
 		<dict>
@@ -957,7 +957,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.standard-ml</string>
+				<string>com.wonky.works.myTextMate.standard-ml</string>
 			</array>
 		</dict>
 		<dict>
@@ -1125,7 +1125,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.snippet</string>
+				<string>com.wonky.works.myTextMate.snippet</string>
 			</array>
 		</dict>
 		<dict>
@@ -1137,7 +1137,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.macro</string>
+				<string>com.wonky.works.myTextMate.macro</string>
 			</array>
 		</dict>
 		<dict>
@@ -1149,7 +1149,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.language</string>
+				<string>com.wonky.works.myTextMate.language</string>
 			</array>
 		</dict>
 		<dict>
@@ -1161,7 +1161,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.preferences</string>
+				<string>com.wonky.works.myTextMate.preferences</string>
 			</array>
 		</dict>
 		<dict>
@@ -1173,7 +1173,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.command</string>
+				<string>com.wonky.works.myTextMate.command</string>
 			</array>
 		</dict>
 		<dict>
@@ -1185,7 +1185,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.drag-command</string>
+				<string>com.wonky.works.myTextMate.drag-command</string>
 			</array>
 		</dict>
 		<dict>
@@ -1197,7 +1197,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.theme</string>
+				<string>com.wonky.works.myTextMate.theme</string>
 			</array>
 		</dict>
 		<dict>
@@ -1209,7 +1209,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.release-notes</string>
+				<string>com.wonky.works.myTextMate.release-notes</string>
 			</array>
 		</dict>
 		<dict>
@@ -1221,7 +1221,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.bundle</string>
+				<string>com.wonky.works.myTextMate.bundle</string>
 			</array>
 		</dict>
 		<dict>
@@ -1233,7 +1233,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.macromates.textmate.plugin</string>
+				<string>com.wonky.works.myTextMate.plugin</string>
 			</array>
 		</dict>
 		<dict>
@@ -1662,7 +1662,7 @@
 			<key>UTTypeIconFile</key>
 			<string>CGI</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.cgi-script</string>
+			<string>com.wonky.works.myTextMate.cgi-script</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -1682,7 +1682,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Config</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.config-file</string>
+			<string>com.wonky.works.myTextMate.config-file</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -1977,7 +1977,7 @@
 			<key>UTTypeIconFile</key>
 			<string>GTD</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.gtd</string>
+			<string>com.wonky.works.myTextMate.gtd</string>
 			<key>UTTypeReferenceURL</key>
 			<string>http://en.wikipedia.org/wiki/Getting_Things_Done</string>
 			<key>UTTypeTagSpecification</key>
@@ -2049,7 +2049,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Inc</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.include-file</string>
+			<string>com.wonky.works.myTextMate.include-file</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -2290,7 +2290,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Lisp</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.lisp</string>
+			<string>com.wonky.works.myTextMate.lisp</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -2333,7 +2333,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Logo</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.logo</string>
+			<string>com.wonky.works.myTextMate.logo</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -2901,7 +2901,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Scheme</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.scheme</string>
+			<string>com.wonky.works.myTextMate.scheme</string>
 			<key>UTTypeReferenceURL</key>
 			<string>http://www.r6rs.org</string>
 			<key>UTTypeTagSpecification</key>
@@ -2923,7 +2923,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Blank</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.setext</string>
+			<string>com.wonky.works.myTextMate.setext</string>
 			<key>UTTypeReferenceURL</key>
 			<string>http://docutils.sourceforge.net/mirror/setext/setext_concepts_Aug92.etx.txt</string>
 			<key>UTTypeTagSpecification</key>
@@ -3011,7 +3011,7 @@
 			<key>UTTypeIconFile</key>
 			<string>SML</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.standard-ml</string>
+			<string>com.wonky.works.myTextMate.standard-ml</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3353,7 +3353,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Snippet</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.snippet</string>
+			<string>com.wonky.works.myTextMate.snippet</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3372,7 +3372,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Macro</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.macro</string>
+			<string>com.wonky.works.myTextMate.macro</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3391,7 +3391,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Grammar</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.language</string>
+			<string>com.wonky.works.myTextMate.language</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3410,7 +3410,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Settings</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.preferences</string>
+			<string>com.wonky.works.myTextMate.preferences</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3429,7 +3429,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Command</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.command</string>
+			<string>com.wonky.works.myTextMate.command</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3448,7 +3448,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Bundle Item</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.drag-command</string>
+			<string>com.wonky.works.myTextMate.drag-command</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3467,7 +3467,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Theme</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.theme</string>
+			<string>com.wonky.works.myTextMate.theme</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3487,7 +3487,7 @@
 			<key>UTTypeIconFile</key>
 			<string>Text</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.release-notes</string>
+			<string>com.wonky.works.myTextMate.release-notes</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3506,7 +3506,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate Bundle</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.bundle</string>
+			<string>com.wonky.works.myTextMate.bundle</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -3526,7 +3526,7 @@
 			<key>UTTypeIconFile</key>
 			<string>TextMate PlugIn</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.macromates.textmate.plugin</string>
+			<string>com.wonky.works.myTextMate.plugin</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

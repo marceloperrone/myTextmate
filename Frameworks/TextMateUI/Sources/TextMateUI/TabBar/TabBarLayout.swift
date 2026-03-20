@@ -10,7 +10,6 @@ import SwiftUI
 /// 2. If total fits in available space, use ideal widths (capped at maxWidth).
 /// 3. Otherwise, compress proportionally, clamped between minWidth and maxWidth.
 /// 4. If tabs still overflow, hide excess and show overflow indicator on last visible tab.
-@available(macOS 13.0, *)
 public struct TabBarLayout: Layout {
     public let minTabWidth: CGFloat
     public let maxTabWidth: CGFloat

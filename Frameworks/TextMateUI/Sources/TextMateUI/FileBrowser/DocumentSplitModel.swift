@@ -5,6 +5,7 @@ import SwiftUI
 /// Bridge between ObjC DocumentWindowController and the NavigationSplitView container.
 /// Owns the FileTreeModel and manages sidebar visibility.
 /// ObjC instantiates via NSClassFromString("DocumentSplitModel").
+@MainActor
 @objc(DocumentSplitModel)
 @Observable
 public final class DocumentSplitModel: NSObject {

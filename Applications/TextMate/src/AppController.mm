@@ -1,7 +1,6 @@
 #import "AppController.h"
 #import "OakMainMenu.h"
 #import "Favorites.h"
-#import "AboutWindowController.h"
 #import "TMPlugInController.h"
 #import <BundleEditor/BundleEditor.h>
 #import <BundlesManager/BundlesManager.h>
@@ -108,10 +107,9 @@ BOOL HasDocumentWindow (NSArray* windows)
 		{ @"File",
 			.submenu = {
 				{ @"New",                     @selector(newDocument:),              @"n"   },
-				{ @"New Tab",                 @selector(newDocumentInTab:),         @"n", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
+				{ @"New Tab",                 @selector(newDocumentInTab:),         @"t"   },
 				{ /* -------- */ },
 				{ @"Open…",                   @selector(openDocument:),             @"o"   },
-				{ @"Open Quickly…",           @selector(goToFile:),                 @"t"   },
 				{ @"Open Recent",
 					.systemMenu = MBMenuTypeOpenRecent, .submenu = {
 						{ @"Clear Menu", @selector(clearRecentDocuments:) },
@@ -287,33 +285,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Customize Touch Bar…",   @selector(toggleTouchBarCustomizationPalette:) },
 			}
 		},
-		{ @"Navigate",
-			.submenu = {
-				{ @"Jump to Line…",              @selector(orderFrontGoToLinePanel:),      @"l" },
-				{ @"Jump to Symbol…",            @selector(showSymbolChooser:),            @"T" },
-				{ @"Jump to Selection",          @selector(centerSelectionInVisibleArea:), @"j" },
-				{ /* -------- */ },
-				{ @"Set Bookmark",               @selector(toggleCurrentBookmark:),                                                   .key = NSF2FunctionKey },
-				{ @"Jump to Next Bookmark",      @selector(goToNextBookmark:),             .modifierFlags = 0,                        .key = NSF2FunctionKey },
-				{ @"Jump to Previous Bookmark",  @selector(goToPreviousBookmark:),         .modifierFlags = NSEventModifierFlagShift, .key = NSF2FunctionKey },
-				{ @"Jump to Bookmark",           .delegate = [MBMenuDelegate delegateUsingSelector:@selector(updateBookmarksMenu:)] },
-				{ /* -------- */ },
-				{ @"Jump to Next Mark",          @selector(jumpToNextMark:),               .modifierFlags = 0,                        .key = NSF3FunctionKey },
-				{ @"Jump to Previous Mark",      @selector(jumpToPreviousMark:),           .modifierFlags = NSEventModifierFlagShift, .key = NSF3FunctionKey },
-				{ /* -------- */ },
-				{ @"Scroll",
-					.submenu = {
-						{ @"Line Up",      @selector(scrollLineUp:),      .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl, .key = NSUpArrowFunctionKey    },
-						{ @"Line Down",    @selector(scrollLineDown:),    .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl, .key = NSDownArrowFunctionKey  },
-						{ @"Column Left",  @selector(scrollColumnLeft:),  .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl, .key = NSLeftArrowFunctionKey  },
-						{ @"Column Right", @selector(scrollColumnRight:), .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl, .key = NSRightArrowFunctionKey },
-					}
-				},
-				{ /* -------- */ },
-				{ @"Go to Related File",         @selector(goToRelatedFile:),              .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption, .key = NSUpArrowFunctionKey },
-				{ /* -------- */ },
-				}
-		},
 		{ @"Text",
 			.submenu = {
 				{ @"Transpose",                            @selector(transpose:)                        },
@@ -341,9 +312,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Reformat Text",                        @selector(reformatText:)                     },
 				{ @"Reformat Text and Justify",            @selector(reformatTextAndJustify:)           },
 				{ @"Unwrap Paragraph",                     @selector(unwrapText:)                       },
-				{ /* -------- */ },
-				{ @"Filter Through Command…",              @selector(orderFrontRunCommandWindow:), @"|" },
-			}
+				}
 		},
 		{ @"File Browser",
 			.submenu = {
@@ -557,8 +526,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 {
 	NSWindow.allowsAutomaticWindowTabbing = NO;
 
-	if([NSApp respondsToSelector:@selector(setAutomaticCustomizeTouchBarMenuItemEnabled)]) // MAC_OS_X_VERSION_10_12_1
-		NSApp.automaticCustomizeTouchBarMenuItemEnabled = YES;
+	NSApp.automaticCustomizeTouchBarMenuItemEnabled = YES;
 
 	if(!HasDocumentWindow([NSApp orderedWindows]))
 	{
@@ -635,7 +603,8 @@ BOOL HasDocumentWindow (NSArray* windows)
 
 - (IBAction)orderFrontAboutPanel:(id)sender
 {
-	[AboutWindowController.sharedInstance showAboutWindow:self];
+	id aboutModel = [NSClassFromString(@"AboutWindowModel") sharedInstance];
+	[aboutModel performSelector:@selector(showAboutWindow:) withObject:self];
 }
 
 - (IBAction)orderFrontFindPanel:(id)sender

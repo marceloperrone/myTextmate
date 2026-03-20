@@ -1,349 +1,290 @@
-# TextMate — SwiftUI Modernization
+# myTextmate
 
-## What This Project Is
+A fork of [TextMate](https://github.com/textmate/textmate), the macOS text editor, undergoing active modernization to bring its UI to macOS Tahoe (26) and SwiftUI while preserving the battle-tested C++ editing engine.
 
-TextMate text editor. Objective-C++ codebase (~50 frameworks) with a custom build system. We are replacing the AppKit UI layer with SwiftUI while keeping the C++ engine untouched.
+**Repository**: https://github.com/marceloperrone/myTextmate
 
-## CRITICAL: Do Not Touch the C++ Engine
+---
 
-The following frameworks are pure C++ and must never be modified:
-`buffer`, `editor`, `encoding`, `layout`, `parse`, `scope`, `selection`, `text`, `theme`, `undo`
+## Architecture Overview
 
-## Build System
+The app is a three-layer hybrid:
 
-### How to Build
-
-```bash
-./configure                    # First time only — checks deps, writes local.rave
-bin/rave -cdebug -tTextMate    # Generates build.ninja (run from repo root)
-ninja                          # Builds everything
+```
+┌─────────────────────────────────────────────────┐
+│  SwiftUI Views (TextMateUI)                     │  ← NEW (macOS 26+)
+│  TabBar, StatusBar, FileBrowser, Preferences    │
+├─────────────────────────────────────────────────┤
+│  Objective-C++ Coordination Layer               │  ← LEGACY (being thinned)
+│  DocumentWindowController, AppController,       │
+│  OakTextView, OakDocument                       │
+├─────────────────────────────────────────────────┤
+│  C++ Core Engine (ng:: namespace)               │  ← STABLE (do not touch)
+│  buffer_t, editor_t, parse, scope, bundles,     │
+│  settings, regexp (Onigmo), layout              │
+└─────────────────────────────────────────────────┘
 ```
 
-The built app lands at: `~/build/myTextmate/debug/Applications/TextMate/TextMate.app`
+**Integration pattern**: SwiftUI models are `@Observable` classes with `@objc` class names. ObjC instantiates them via `NSClassFromString()` and communicates through KVC (`setValue:forKey:`) and delegate selectors. SwiftUI views are embedded in AppKit via `NSHostingView`.
 
-For release: `bin/rave -crelease -tTextMate && ninja`
+---
 
-### How the Build System Works
+## What's Modern (Swift/SwiftUI)
 
-- `bin/rave` is a ~1500-line Ruby script that reads `.rave` DSL files and generates `build.ninja`
-- Every framework has a `default.rave` declaring its dependencies (`require`), sources, and frameworks
-- The app target (`Applications/TextMate/default.rave`) pulls everything together via `require`
-- `default.rave` at the repo root sets compiler flags and defines `debug`/`release` configs
+All located in `Frameworks/TextMateUI/`:
 
-### Key Idiosyncrasy: Link Rules
+| Component | Files | Status |
+|-----------|-------|--------|
+| **TabBar** | `TabBarModel.swift`, `TabBarView.swift`, `TabBarLayout.swift` | Integrated — lives in titlebar accessory |
+| **StatusBar** | `StatusBarViewModel.swift`, `StatusBarView.swift` | Integrated — replaces OTVStatusBar |
+| **FileBrowser** | `FileTreeModel.swift`, `FileBrowserView.swift`, `FileItemRow.swift`, `NavigationModel.swift`, `FileBrowserHeaderView.swift` | Integrated — NavigationSplitView sidebar |
+| **Document Split** | `DocumentSplitModel.swift`, `DocumentSplitView.swift` | Integrated — top-level container |
+| **Preferences** | `SettingsWindow.swift`, `FilesSettingsView.swift`, `ProjectsSettingsView.swift`, `BundlesSettingsView.swift` | Integrated — replaces AppKit prefs panes |
+| **Bridge** | `SettingsStore.swift`, `HostingSupport.swift` | Shared infrastructure |
+| **ObjC Bridge** | `TextMateBridge/` (`SettingsBridge.mm`, `BundlesBridge.mm`) | SPM stubs return mock data for previews; rave build uses real C++ implementations in `Frameworks/TextMateBridge/src/` |
 
-`bin/rave` detects Swift sources across the dependency graph. When any required target has `.swift` files:
-- It uses `swiftc` (not `clang`) as the linker via a separate `LinkSwift` ninja rule
-- It converts `-fsanitize=X` → `-sanitize=X` (swiftc format)
-- It strips clang-only flags (`-mmacosx-version-min`, `-fobjc-link-runtime`, `-flto`)
-- It converts `-Wl,flag` → `-Xlinker flag`
-- It adds `-framework SwiftUI` automatically
+**Swift Package**: `Frameworks/TextMateUI/Package.swift` — Swift 5.9, macOS 26+, two targets: `TextMateBridge` (ObjC++) and `TextMateUI` (Swift).
 
-**Bug we fixed:** Originally all executables shared one `rule Link` (using `clang`). When the TextMate app gained Swift dependencies, the flag transforms ran but the command was still `clang`. We split it into `rule Link` (clang) and `rule LinkSwift` (swiftc) — see `bin/rave` around line 1001.
+**Key patterns used**:
+- `@MainActor @Observable` models with `@ObservationIgnored` for ObjC interop properties
+- `NSHostingView` / `NSHostingController` for embedding in AppKit
+- `NSViewRepresentable` for wrapping remaining AppKit controls (NSPopUpButton)
+- Custom `Layout` protocol for tab width algorithm
+- Weak delegate/target references to prevent retain cycles
+- `@AppStorage` for UserDefaults, `SettingsStore` for C++ settings bridge
 
-### Dependency Management
+---
 
-Each `.rave` file declares `require OtherFramework` to depend on siblings. The app target's require list:
-```
-BundleEditor BundleMenu BundlesManager CommitWindow CrashReporter DocumentWindow Find
-HTMLOutputWindow MenuBuilder OakAppKit OakCommand OakFilterList OakFoundation OakSystem
-OakTextView Preferences SoftwareUpdate TextMateUI authorization bundles cf command crash
-document io kvdb license network ns plist regexp scm settings text theme
-```
+## What's Legacy (Objective-C++ / C++)
 
-## Architecture: ObjC ↔ SwiftUI Interop Pattern
+### Core Editor Engine (C++ — STABLE, DO NOT MODIFY without deep understanding)
 
-All SwiftUI components follow the same pattern for integration with ObjC++:
+| Framework | Purpose | Key Types |
+|-----------|---------|-----------|
+| `buffer/` | Text buffer, syntax parsing, marks, symbols, spelling | `ng::buffer_t`, `ng::pairs_t` |
+| `editor/` | All editing operations (66KB of logic) | `ng::editor_t`, `ng::action_t` |
+| `selection/` | Selection management, column selection | `ng::range_t`, `ng::index_t` |
+| `layout/` | Text layout and wrapping | Layout engine |
+| `parse/` | Grammar parsing | Parser state machine |
+| `scope/` | Scope context evaluation | `scope::context_t` |
+| `bundles/` | .tmbundle loading, macro system | `bundles::item_ptr` |
+| `settings/` | .tm_properties cascade | `settings_t` |
+| `regexp/` | Regular expressions via Onigmo | Regex engine |
+| `text/` | UTF-8 handling, case, newlines | Text utilities |
+| `undo/` | Undo/redo stack | Undo manager |
+| `command/` | Bundle command execution | Command runner |
+| `theme/` | Syntax theme rendering | Theme engine |
+| `plist/` | Property list parsing (Cap'n Proto) | Plist reader |
 
-### 1. Swift Model with `@objc(ClassName)`
+### ObjC++ UI & Coordination (LEGACY — migration targets)
 
-```swift
-@objc(StatusBarViewModel)    // ← Enables NSClassFromString("StatusBarViewModel")
-@Observable
-public final class StatusBarViewModel: NSObject {
-    @objc public var selectionString: String = "1:1"  // ← KVC-settable from ObjC
+| Framework/File | Purpose | Modernization Status |
+|----------------|---------|---------------------|
+| `DocumentWindowController.mm` (1,500+ lines) | Main window orchestration | Partially modernized — delegates to SwiftUI models |
+| `AppController.mm` (809 lines) | App lifecycle, menus | Legacy — needs modernization |
+| `OakTextView/` | Core text editing NSView | Legacy — keep as-is (tightly coupled to C++ engine) |
+| `OakDocument` | Document model wrapper | Legacy — keep as-is (bridges to ng::buffer_t) |
+| `OakAppKit/` | AppKit utilities, extensions | Legacy — gradual replacement |
+| `OakFilterList/` | Chooser dialogs (Open Quickly, etc.) | Legacy — migration candidate |
+| `OakCommand/` | Command execution UI | Legacy — simplified (HTMLOutput removed) |
+| `Find/` | Find & Replace panel | Legacy — migration candidate |
+| `BundleEditor/` | Bundle editor window | Legacy — migration candidate |
+| `MenuBuilder/` | Dynamic menu construction | Legacy — keep (works well) |
+| `FileBrowser/` | ObjC file browser support code | Mostly replaced by SwiftUI |
+| `OakTabBarView/` | Legacy tab bar | Replaced by SwiftUI (kept for header refs) |
 
-    @ObservationIgnored
-    @objc public weak var delegate: AnyObject?         // ← Weak ref to ObjC controller
+### Already Removed
 
-    @ObservationIgnored
-    @objc public weak var target: AnyObject?           // ← For selector dispatch
+- `scm/` — Git/Hg/SVN/P4 integration (commit e7aac0ac)
+- `HTMLOutput/`, `HTMLOutputWindow/` — HTML preview rendering
+- `RMateServer` — Remote editing protocol
+- `OTVStatusBar` — Old AppKit status bar
+- Legacy Preferences panes (Terminal, Variables, SoftwareUpdate)
+- `Shared/include/oak/sdk-compat.h` — Compatibility shims for macOS 10.13/10.14/11.0 (removed in Phase 0)
 
-    @ObservationIgnored
-    @objc public lazy var hostingView: NSView = {      // ← Factory, accessed via KVC
-        NSHostingView(rootView: StatusBarView(model: self))
-    }()
+---
 
-    // Actions dispatch to ObjC via selectors:
-    public func selectGrammar(uuid: String) {
-        let item = NSMenuItem()
-        item.representedObject = uuid
-        _ = target?.perform(NSSelectorFromString("takeGrammarUUIDFrom:"), with: item)
-    }
-}
-```
+## How Legacy and Modern Code Integrate
 
-### 2. ObjC Side Instantiates via Runtime
-
+### Instantiation Flow (ObjC → Swift)
 ```objc
-// In the .mm file — NO Swift imports needed:
-Class Cls = NSClassFromString(@"StatusBarViewModel");
-self.statusBarModel = [[Cls alloc] init];
-[self.statusBarModel setValue:self forKey:@"delegate"];
-[self.statusBarModel setValue:self forKey:@"target"];
-NSView* hostingView = [self.statusBarModel valueForKey:@"hostingView"];
-// Add hostingView to the AppKit view hierarchy
+// DocumentWindowController.mm
+Class TabBarModelClass = NSClassFromString(@"TabBarModel");
+self.tabBarModel = [[TabBarModelClass alloc] init];
+[self.tabBarModel setValue:self forKey:@"delegate"];
+[self.tabBarModel setValue:self forKey:@"target"];
 ```
 
-### 3. Forward-Declare Selectors
+### Data Flow (ObjC → Swift model → SwiftUI view)
+```objc
+// ObjC pushes data into Swift @Observable model
+[self.tabBarModel reloadWithCount:titles:paths:identifiers:editedFlags:];
+// SwiftUI automatically re-renders via @Observable
+```
 
-When calling methods with complex signatures on `id`, the compiler needs to see the selector. Add a category on NSObject:
+### Action Flow (SwiftUI → ObjC via delegate)
+```swift
+// Swift model dispatches to ObjC delegate
+_ = target?.perform(NSSelectorFromString("selectTab:"), with: NSNumber(value: index))
+```
 
+### View Embedding
+```objc
+// NSHostingView wraps SwiftUI view into AppKit hierarchy
+NSView* hostingView = [self.splitModel valueForKey:@"hostingView"];
+[self.window.contentView addSubview:hostingView];
+```
+
+### Forward Declarations (avoid import issues)
 ```objc
 @interface NSObject (TabBarModelMethods)
-- (void)reloadWithCount:(NSInteger)count titles:(NSArray<NSString*>*)titles ...;
+- (void)reloadWithCount:(NSUInteger)count titles:(NSArray*)t ...;
 @end
 ```
 
-### 4. Delegate Callbacks from Swift → ObjC
+---
 
-Swift model dispatches to ObjC delegate via `perform(_:with:)`:
-```swift
-_ = delegate?.perform(
-    NSSelectorFromString("tabBarModel:didSelectIndex:"),
-    with: self, with: NSNumber(value: index)
-)
+## Build System
+
+**Tool**: Custom RAVE build system (`bin/rave`, Ruby) → generates `build.ninja` → executed by Ninja.
+
+### Build & Run
+```bash
+./configure          # Validates dependencies, writes local.rave
+ninja TextMate/run   # Build and launch (debug config)
+ninja -f build.ninja TextMate/run  # Explicit
 ```
 
-ObjC side implements the method normally:
-```objc
-- (void)tabBarModel:(id)model didSelectIndex:(NSNumber*)indexNumber {
-    NSUInteger anIndex = indexNumber.unsignedIntegerValue;
-    [self openAndSelectDocument:_documents[anIndex] activate:YES];
-}
+### Dependencies (install via Homebrew)
+```
+boost, capnp, google-sparsehash, multimarkdown, ninja, ragel
 ```
 
-## TextMateUI Framework
+### Vendored Libraries
+- **Onigmo** (`vendor/Onigmo/`) — Regex engine
+- **kvdb** (`vendor/kvdb/`) — SQLite key-value store
 
-Location: `Frameworks/TextMateUI/`
+### Key Build Settings
+- Deployment target: macOS 26.0 (Tahoe) — set in `default.rave` `APP_MIN_OS`
+- C++: C++2a, ObjC: ARC enabled
+- Swift target: derived from `APP_MIN_OS` in `bin/rave`
+- Debug: AddressSanitizer, Release: LTO + dead stripping
+- Code signing: ad-hoc (`-`)
 
-Has both a `Package.swift` (for standalone `swift build` testing) and a `default.rave` (for integration into the main build). The rave build is what matters for the actual app.
+### Framework Count: ~49 frameworks, 11 applications/tools
 
-### default.rave
+---
+
+## Project Structure
+
 ```
-target "${dirname}" {
-    require TextMateBridge
-    sources Sources/TextMateUI/**/*.swift
-    swift_bridging_header ${dir}/src/TextMateUI-Bridging-Header.h
-    frameworks Cocoa SwiftUI
-}
-```
+Applications/
+  TextMate/          Main editor app (depends on 21 frameworks)
+  mate/              CLI tool to open files
+  SyntaxMate/        Syntax bundle manager
+  QuickLookGenerator/ Quick Look plugin
+  ...other CLI tools (bl, gtm, indent, tm_query, pretty_plist)
 
-### Source Structure
+Frameworks/
+  TextMateUI/        NEW — SwiftUI views + TextMateBridge (SPM package)
+  TextMateBridge/    NEW — ObjC++ bridge exposing C++ to Swift
+  DocumentWindow/    Main window controller (largest file: ~1500 lines .mm)
+  OakTextView/       Core text editor NSView
+  buffer/            C++ text buffer
+  editor/            C++ editing operations
+  OakAppKit/         AppKit extensions
+  bundles/           Bundle system
+  settings/          .tm_properties
+  ...44 more frameworks
 
-```
-Sources/TextMateUI/
-├── TextMateUI.swift                 # Package entry
-├── Preferences/                     # Phase 1: Settings window (6 panes)
-│   ├── SettingsWindow.swift
-│   ├── FilesSettingsView.swift
-│   ├── ProjectsSettingsView.swift
-│   ├── BundlesSettingsView.swift
-│   ├── VariablesSettingsView.swift
-│   ├── TerminalSettingsView.swift
-│   └── UpdateSettingsView.swift
-├── StatusBar/                       # Phase 2: Status bar (DONE — wired into OakDocumentView)
-│   ├── StatusBarViewModel.swift
-│   └── StatusBarView.swift
-├── TabBar/                          # Phase 3: Tab bar (DONE — wired into DocumentWindowController)
-│   ├── TabBarModel.swift
-│   ├── TabBarView.swift
-│   └── TabBarLayout.swift
-├── FileBrowser/                     # Phase 4: File browser (DONE — NavigationSplitView sidebar)
-│   ├── DocumentSplitModel.swift
-│   ├── DocumentSplitView.swift
-│   ├── FileBrowserView.swift
-│   ├── FileTreeModel.swift
-│   ├── NavigationModel.swift
-│   ├── FileItemRow.swift
-│   ├── FileBrowserHeaderView.swift
-│   └── FileBrowserActionsView.swift
-└── Shared/
-    ├── HostingSupport.swift
-    └── SettingsStore.swift
+Shared/              Shared headers and precompiled headers
+vendor/              Onigmo regex engine, kvdb
+bin/                 Build scripts (rave)
 ```
 
-### TextMateBridge (ObjC bridge layer)
+---
 
-Location: `Frameworks/TextMateBridge/`
+## Modernization Plan: macOS Tahoe
 
-Provides ObjC classes that Swift can import via the bridging header. These are stubs that need C++ implementations wired in:
-- `SettingsBridge` — reads/writes C++ settings engine
-- `BundlesBridge` — queries bundle/grammar lists
-- `SoftwareUpdateBridge` — update check state
-- `MateInstallBridge` — `mate` CLI install status
+### Phase 0: Foundation ✅ COMPLETE
 
-Bridging header at `Frameworks/TextMateUI/src/TextMateUI-Bridging-Header.h`:
-```objc
-#import <TextMateBridge/SettingsBridge.h>
-#import <TextMateBridge/BundlesBridge.h>
-#import <TextMateBridge/SoftwareUpdateBridge.h>
-#import <TextMateBridge/MateInstallBridge.h>
-```
+- [x] **Bump deployment target** to macOS 26.0 (Tahoe)
+  - `APP_MIN_OS` → `"26.0"` in `default.rave`, `.macOS(.v26)` in `Package.swift`
+  - Fixed `bin/rave` to derive Swift `-target` from `APP_MIN_OS` (was hardcoded to `macos14.0`)
+- [x] **Remove all compatibility code**
+  - Deleted `Shared/include/oak/sdk-compat.h` and its PCH import
+  - Removed ~30 `@available`/`#available` guards across 20+ ObjC/Swift files
+  - Removed dead `NSUserNotification` code from CrashReporter
+  - Removed `respondsToSelector:` version-gating (Touch Bar API guard in AppController)
+- [x] **Adopt `@MainActor` on Swift models** — `TabBarModel`, `StatusBarViewModel`, `FileTreeModel`, `NavigationModel`, `DocumentSplitModel`, `SettingsStore`
+  - Converted GCD dispatch in `FileTreeModel.loadDirectory()` to `Task.detached` + `MainActor.run`
+  - Added `@MainActor` to `Coordinator` classes in `StatusBarView.swift`
+- [x] **Update SPM bridge stubs** with mock data for SwiftUI previews (settings defaults + 12 grammar entries)
+- **Note**: TextMateBridge C++ stubs (in SPM) remain stubs — the rave build uses the real implementations in `Frameworks/TextMateBridge/src/`
 
-## Completed Integrations
+### Phase 1: Window Chrome (high visual impact) ← NEXT
 
-### Status Bar (Phase 2)
+- [ ] **Toolbar modernization** — adopt `NSToolbar` with `.unifiedTitleAndToolbar` style; replace manual titlebar accessory with native toolbar items
+- [ ] **Liquid Glass** — apply Tahoe's translucent glass material to sidebar, tab bar, toolbar (macOS 26 is now baseline, no `#available` guards needed)
+- [ ] **Tab bar refinement** — evaluate adopting native `NSTabGroup` or keep custom SwiftUI tabs with Tahoe styling (TabBarView already has `.glassEffect` on selected tabs)
+- [ ] **Window style** — `.windowStyle(.glass)` for the main window if using SwiftUI window management
 
-- **Swift**: `StatusBarViewModel` + `StatusBarView`
-- **ObjC**: `OakDocumentView.mm` instantiates via `NSClassFromString(@"StatusBarViewModel")`
-- **Original**: `OTVStatusBar.mm` (still exists but bypassed)
-- Properties set via KVC: `selectionString`, `grammarName`, `tabSize`, `softTabs`, etc.
-- Actions dispatched via selectors: `takeGrammarUUIDFrom:`, `takeTabSizeFrom:`, etc.
+### Phase 2: Panels & Dialogs
 
-### Tab Bar (Phase 3)
+- [ ] **Find & Replace** — rewrite `Find/` framework UI in SwiftUI (keep C++ regex engine)
+- [ ] **Open Quickly** — rewrite `OakFilterList/` chooser in SwiftUI with modern search field
+- [ ] **Bundle Editor** — rewrite `BundleEditor/` in SwiftUI
+- [ ] **Go To Line/Symbol** — SwiftUI popovers replacing legacy panels
 
-- **Swift**: `TabBarModel` + `TabBarView` + `TabBarLayout`
-- **ObjC**: `DocumentWindowController.mm` instantiates via `NSClassFromString(@"TabBarModel")`
-- **Original**: `OakTabBarView.mm` (still exists, no longer used by DocumentWindow)
-- `DocumentWindow/default.rave` no longer requires `OakTabBarView`
-- Titlebar accessory VC: `[tabBarModel valueForKey:@"titlebarViewController"]`
-- Data reload: `[tabBarModel reloadWithCount:titles:paths:identifiers:editedFlags:]`
-- Tab visibility: `[tabBarModel setValue:@(hidden) forKey:@"isHidden"]`
-- Delegate methods: `tabBarModel:didSelectIndex:`, `tabBarModel:didDoubleClickIndex:`, `tabBarModelDidDoubleClickBackground:`, `tabBarModel:didCloseIndex:`, `tabBarModel:menuForIndex:`
-- Context menu: returns NSMenu from `tabBarModel:menuForIndex:` — displayed via NSViewRepresentable overlay
+### Phase 3: Reduce ObjC++ Coordination Layer
 
-### File Browser + NavigationSplitView (Phase 4)
+- [ ] **Slim DocumentWindowController** — extract remaining logic into Swift; goal is for it to be a thin shell that owns OakTextView and delegates everything else to Swift
+- [ ] **AppController → SwiftUI App lifecycle** — evaluate migrating from `NSApplicationDelegate` to `@main struct TextMateApp: App {}` (major change, careful evaluation needed)
+- [ ] **Menu system** — evaluate SwiftUI `CommandMenu` / `Commands` vs keeping `MenuBuilder` (MenuBuilder may be more flexible for dynamic bundle menus)
 
-- **Swift**: `DocumentSplitModel` + `DocumentSplitView` + `FileTreeModel` + `FileBrowserView`
-- **ObjC**: `DocumentWindowController.mm` instantiates via `NSClassFromString(@"DocumentSplitModel")`
-- **Architecture**: `NavigationSplitView` is the top-level window content, with sidebar=FileBrowserView, detail=NSViewRepresentable wrapping ProjectLayoutView
-- `DocumentSplitModel` owns `FileTreeModel` and manages sidebar visibility
-- `ProjectLayoutView` stripped of file browser code — now doc+html only
-- Window style includes `NSWindowStyleMaskFullSizeContentView` for Liquid Glass on macOS Tahoe
-- Sidebar visibility: `[splitModel setValue:@(visible) forKey:@"sidebarVisible"]`
-- File browser access: `[splitModel valueForKey:@"fileBrowser"]` returns the FileTreeModel
-- `fileBrowserOnRight` preference removed — NavigationSplitView sidebar is always on leading edge
-- Window frame expand/shrink on toggle removed — NavigationSplitView handles sidebar slide in/out
+### Phase 4: Editor View Integration
 
-### Key Files Modified
+- [ ] **OakTextView wrapper** — create `NSViewRepresentable` wrapper so OakTextView can participate in SwiftUI layouts directly
+- [ ] **Document model** — consider Swift wrapper around `OakDocument` with `@Observable` for reactive document state
+- [ ] **GutterView** — was removed; rebuild as SwiftUI overlay or reintegrate as native component
 
-| File | What Changed |
-|------|-------------|
-| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | Uses DocumentSplitModel as window content, simplified file browser toggling |
-| `Frameworks/DocumentWindow/src/ProjectLayoutView.h/.mm` | Stripped file browser code, now doc+html only |
-| `Frameworks/OakTextView/src/OakDocumentView.mm` | Added StatusBarViewModel integration |
-| `bin/rave` | Fixed LinkSwift rule (separate from Link) |
+### Phase 5: Cleanup
 
-## Key Files Reference
+- [ ] **Remove dead frameworks** — any remaining code for features that were stripped (SCM stubs, HTMLOutput refs)
+- [ ] **Consolidate OakAppKit** — move still-needed utilities to Swift extensions, retire the framework
+- [ ] **Remove OakTabBarView** — currently kept for header references only; fully decouple
+- [ ] **Entitlements audit** — review if all entitlements are still needed
 
-| File | Purpose |
-|------|---------|
-| `Applications/TextMate/src/AppController.mm` | Main app controller, menu wiring |
-| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | Window management, tab/document lifecycle |
-| `Frameworks/DocumentWindow/src/DocumentWindowController.h` | Public interface |
-| `Frameworks/DocumentWindow/src/ProjectLayoutView.mm` | Split view: editor + HTML output (file browser moved to NavigationSplitView) |
-| `Frameworks/OakTextView/src/OakDocumentView.mm` | Editor view + status bar host |
-| `Frameworks/OakTextView/src/OakTextView.mm` | Text editing engine (AppKit wrapper around C++) |
-| `Frameworks/FileBrowser/src/FileBrowserViewController.mm` | Current file browser (Phase 4 target) |
-| `Frameworks/Preferences/src/Preferences.mm` | Current preferences window (Phase 1 target) |
-| `Frameworks/OakTabBarView/src/OakTabBarView.mm` | Original tab bar (1369 lines, now bypassed) |
+### Things to KEEP as-is
 
-## Remaining Work
+- **C++ engine** (`buffer/`, `editor/`, `parse/`, `scope/`, `selection/`, `layout/`, `undo/`) — this is TextMate's soul. It's stable, fast, and deeply interconnected. Rewriting it would be a multi-year effort with no user-facing benefit.
+- **Bundle system** (`bundles/`, `command/`) — the .tmbundle ecosystem is a key differentiator
+- **Settings cascade** (`settings/`) — .tm_properties is powerful and well-tested
+- **Onigmo regex** — used throughout for syntax highlighting and find/replace
+- **OakTextView** — tightly coupled to the C++ engine via `ng::editor_t`; wrap it, don't rewrite it
 
-### Other Potential Phases
-- Replace Preferences window (currently `Preferences.mm` → `SettingsWindowController`)
-- Wire TextMateBridge stubs to actual C++ implementations
-- Replace remaining AppKit views (HTML output, find panel, etc.)
+---
 
-## Gotchas & Lessons Learned
+## Coding Conventions
 
-1. **`NSClassFromString` returns nil if the Swift module isn't linked** — ensure the target chain includes TextMateUI in its `require` list
-2. **Closures with block signatures can't be `@objc`** — use `delegate`/`target` + selector dispatch instead
-3. **`@ObservationIgnored` is required on callback closures and delegate refs** — otherwise `@Observable` tries to track them
-4. **Forward-declare selectors** when sending messages to `id` with complex parameter lists — the ObjC++ compiler errors on unknown selectors
-5. **`bin/rave` must be re-run after changing `.rave` files** — it regenerates `build.ninja`; just running `ninja` alone won't pick up dependency changes
-6. **The `swift build` in the package dir is for iteration only** — it will show errors for bridge stubs that lack C++ linking. The real build goes through `bin/rave` + `ninja`
-7. **Tab bar is in the titlebar** via `NSTitlebarAccessoryViewController` with `layoutAttribute = .bottom`
-8. **Single-tab auto-hide**: controlled by `kUserDefaultsDisableTabBarCollapsingKey` preference — when false, tab bar hides with ≤1 document
+- **C++**: `ng::` namespace, `snake_case`, `_t` suffix for types, `std::string` throughout
+- **Objective-C++**: `.mm` extension, ARC enabled, properties for public API, delegate/target pattern
+- **Swift**: `@MainActor @Observable` models, `@objc` class names for ObjC interop, weak delegate/target refs
+- **SwiftUI**: `@ObservationIgnored` for non-reactive properties, lazy `NSHostingView` creation
+- **Build**: Each framework has its own `default.rave` declaring dependencies
+- **Interop**: `NSClassFromString()` + KVC for ObjC→Swift, `NSSelectorFromString()` for Swift→ObjC delegate calls
 
+## Key Files
 
-Developer Documentation
-=======================
-
-TextMate is written in Objective-C++: the low-level data structures (mostly non-GUI specific code) are written in C++, the GUI part in Objective-C++ (the C++ part here coming from the need to use the low-level C++ data structures).
-
-## Model
-
-### `oak::basic_tree_t`
-This is basically a balanced [binary indexed](http://en.wikipedia.org/wiki/Fenwick_tree) tree. I.e. it has 2 specifics:
-
-* it is *balanced*: this is achieved by using an [AA-tree](http://en.wikipedia.org/wiki/AA_tree)
-* it is a *binary indexed tree*: you have O(1) access to `std::accumulate(tree.begin(), it, key_type(), [](key_type const& key, value_type const& value) -> key_type { return key + value.key })` for any `it`
-
-It is a template parameterized by 2 types:
-
-* *`key_type`*: this type has to implement the `+` and `-` operations, and also a default constructor that yields the identity element w.r.t. the operations (i.e. for any `key_type key`, it must hold that `key + key_type() == key_type() + key == key - key_type() == key_type() - key`).
-* *`value`*: the value stored by each tree node
-
-When iterating over the values in the tree, the iterator's value type (i.e. what you get from `*it`) has 3 members:
-
-* `offset`: result of `std::accumulate(tree.begin(), it, key_type(), [](key_type const& key, value_type const& value) -> key_type { return key + value.key })`
-* `key`: simply a reference to the key user stored in the node
-* `value`: simply a reference the value the user stored in the node
-
-Note that for the `key` and `value` members, a reference to the actual object is stored. While it's not a surprise that you can modify the `it->value`, what's really interesting is that you can modify an `it->key` and then call `tree->update_key(it)` to make the tree recalculate the `offset` information for the whole tree (takes O(log(N))).
-
-Unlike the standard associative containers which have a comparison object inherent in their type (as a template parameter), with `oak::basic_tree_t` you pass a comparison object directly to the methods working with comparisons. These are `lower_bound`, `upper_bound` and `find`.
-
-Also unlike the standard comparison object which takes 2 parameters (and models a `<` relation), here the comparison object takes 3 parameters, all of type `key_type`: `search`, `offset` and `key`. The `search` parameter is the one passed to one of the 3 comparison methods above. The `offset` and `key` parameters correspond to an iterator's value_type. The object returns a value in the set {-1, 0, 1}: -1 means iterator's node is "less" than search, 0 means it is "equal" and 1 means it is "more". Analogically to the standard associative containers then, the comparison methods return the following:
-
-* `it = tree.lower_bound(search, comp)`: then `it` is the first node for which `comp(search, it->offset, it->key) != 1` (i.e. the first node that is "not less than" `search`)
-* `it = tree.upper_bound(search, comp)`: then `it` is the first node for which `comp(search, it->offset, it->key) == -1` (i.e. the first node that is "more than" `search`)
-* `it = tree.find(search, comp)`: `it` is the node for which `comp(search, it->offset, it->key) == 0`, or `tree->end()` if no such node exists (i.e. the first node that is "equal" to `search`)
-
-`oak::basic_tree_t` is a very important data structure in TextMate as it is used in various places and contexts, including text storage, layout, to implement `ng::indexed_map_t` (see later), etc.
-
-### `ng::detail::storage_t`
-This is a type used to store a (potentially big) sequence of bytes using chunks of memory stored in `oak::basic_tree_t`. Think of it as an efficient std::string :-). More specifically, inserting and deleting a string in a storage representing a string of length `N` is better than `O(N)`.
-
-### `ng::buffer_t`
-This type builds on top of the raw character storage provided by `ng::detail::storage_t` and provides some semantical services for the text stored within it:
-
-* _lines_: it detects newline characters and provides a way to translate between position in text and the line and column number
-* _spelling_: it checks the text for spelling errors and provides a way to retrieve them
-* _scopes_: it parses the text (using one or more bundles) and assigns one or more *scopes* to some ranges of the text; these usually correspond to various markup or syntax parts of the language the text is written in
-* _marks_: TODO
-
-### `ng::indexed_map_t`
-This data structure is what it is called:
-
-* it's a *map*: behaves like std::map<ssize_t, ValT> in that it provides the `find`, `lower_bound` and `upper_bound` methods
-* it's *indexed*: you get O(log(N)) access to its n-th element for any `n`
-
-It is implemented as an `oak::basic_tree_t` which dictates its `key_type` and provides some services built around the `key_type` members:
-
-* `number_of_children`: this enables the efficient indexing of nodes, i.e. getting the n-th iterator is O(log(N)) (instead of O(N) in the general `oak::basic_tree_t`)
-* `length`: this is used for the `std::map`-like functionality.
-
-This structure basically provides a segment tree where a value is valid for a specific `ssize_t` range: `ng::indexed_map_t::iterator it` represents a value `it->value` that is valid in the semi-open range `[it.base()->offset.length, it.base()->offset.length + it.base()->key.length)`, and also that it is the `it->offset.number_of_children`-th value in the indexed map (you can get this more nicely and reliably as `it->index()` which also works if `it == map.end()`).
-
-You can also work with this segment map in the following ways:
-
-* `map.upper_bound(position)`: find a value valid at a given `position`
-* `map.set(position, value)`: set a `value` to be valid for a range ending at `position`. The value that was valid at this position before the setting is then valid only after the `position` (the end of the range for the previously valid value remains unchanged). If the `position` was beyond the total range currently represented by the map, then the total range is appropriately extended and the `value` is valid from the end of the previous total range until `position`.
-* `map.remove(position)`: remove a value valid exactly until `position`, extending the range of the next value to be valid for the range of the removed value. If this is the last value, then the total range represented by the map gets reduced. Note that if you want to remove a value valid *at* `position` (as opposed to a value valid *exactly until* `position`), you have to do it like `map.remove(map.upper_bound(position)->second)`
-* `map.replace(from, to, newLength, bindRight)`: this models replacing a range `(from, to)` with a new one of length `newLength` and making valid for this whole range the value that was previously valid at position `to`.
-
-### `ng::layout_t`
-This data structure holds a `ng::buffer_t` and a viewport width and height and provides services for calculating the layout of text, i.e. how the semantical lines (divided by newline character) are divided into visual softlines (induced by wrapping the text at the viewport width and folding), what is the interline spacing, font size etc.. It provides a way to retrieve various geometrical characteristics of ranges of text. Finally, it can use all this information to draw portions of the buffer into a CGContext.
-
-## GUI
-
-### `OakTextView.framework`
-The `OakTextView.framework` contains the components you work most with when using TextMate:
-
-* `OakTextView`: the text view itself; it uses a `ng::buffer_t` together with `ng::layout_t` to display text, and among other things, implements input handling consistent with Cocoa's key bindings mechanism.
-* `GutterView`: the view left to the text view containing line numbers, folding marks etc.
-* `OTVStatusBar`: the bar below the text view containing e.g. current bundle, symbol etc.
-* `OakDocumentView`: a view that contains as its subviews an `OakTextView`, `GutterView` and `OTVStatusBar` and makes them work together
+| File | Lines | Role |
+|------|-------|------|
+| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | ~1500 | Main window orchestration hub |
+| `Applications/TextMate/src/AppController.mm` | 809 | App delegate, menus, lifecycle |
+| `Frameworks/OakTextView/src/OakTextView.mm` | Large | Core text editor view |
+| `Frameworks/OakTextView/src/OakDocumentView.mm` | — | Wraps OakTextView + status bar |
+| `Frameworks/editor/src/editor.cc` | 66KB | All editing operations |
+| `Frameworks/buffer/src/buffer.cc` | 12KB | Text buffer implementation |
+| `Frameworks/document/src/OakDocument.h` | 131 | Document model interface |
+| `Frameworks/TextMateUI/Sources/TextMateUI/` | ~20 files | All SwiftUI components |
+| `Frameworks/TextMateUI/Sources/TextMateBridge/` | — | C++ ↔ Swift bridge |
+| `default.rave` | 46 | Root build configuration |

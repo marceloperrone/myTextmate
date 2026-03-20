@@ -1,7 +1,6 @@
 #import "DocumentWindowController.h"
 #import "ProjectLayoutView.h"
 #import "SelectGrammarViewController.h"
-#import "OakRunCommandWindowController.h"
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <OakAppKit/NSAlert Additions.h>
@@ -1773,23 +1772,31 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 - (IBAction)orderFrontFindPanel:(id)sender
 {
-	Find* find              = Find.sharedInstance;
-	BOOL didOwnDialog       = find.delegate == self;
-	[self prepareAndReturnFindPanel];
-
 	NSInteger mode = [sender respondsToSelector:@selector(tag)] ? [sender tag] : FFSearchTargetDocument;
 	if(mode == FFSearchTargetDocument && ![NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAlwaysFindInDocument] && [self.window isKeyWindow] && self.textView.hasMultiLineSelection)
 		mode = FFSearchTargetSelection;
 
+	// Use inline find bar for document/selection targets
+	if(mode == FFSearchTargetDocument || mode == FFSearchTargetSelection)
+	{
+		if(mode == FFSearchTargetSelection)
+			[self.documentView showFindBarWithSelection];
+		else
+			[self.documentView showFindBar];
+		return;
+	}
+
+	// Fall through to floating Find panel for project/folder targets
+	Find* find              = Find.sharedInstance;
+	BOOL didOwnDialog       = find.delegate == self;
+	[self prepareAndReturnFindPanel];
+
 	switch(mode)
 	{
-		case FFSearchTargetDocument:  find.searchTarget = FFSearchTargetDocument;  break;
-		case FFSearchTargetSelection: find.searchTarget = FFSearchTargetSelection; break;
 		case FFSearchTargetOther:     return [find showFolderSelectionPanel:self]; break;
 
 		case FFSearchTargetProject:
 		{
-			// Only reset search target if the dialog is not already showing potential search results from “Other…”
 			if(!find.isVisible || !didOwnDialog || find.searchTarget == FFSearchTargetDocument || find.searchTarget == FFSearchTargetSelection)
 			{
 				BOOL fileBrowserHasFocus = [self.window.firstResponder respondsToSelector:@selector(isDescendantOf:)] && [(NSView*)self.window.firstResponder isDescendantOf:[self.fileBrowser valueForKey:@"hostingView"]];
@@ -1815,13 +1822,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	[find showWindow:self];
 }
 
-- (IBAction)orderFrontRunCommandWindow:(id)sender
-{
-	OakRunCommandWindowController* runCommand = OakRunCommandWindowController.sharedInstance;
-	[self positionWindow:runCommand.window];
-	[runCommand showWindow:nil];
-}
-
 // ================
 // = FindDelegate =
 // ================
@@ -1833,40 +1833,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	[self openItems:@[ @{ @"identifier": aDocument.identifier.UUIDString } ] closingOtherTabs:NO activate:YES];
 }
 
-// ==================
-// = OakFileChooser =
-// ==================
-
-- (IBAction)goToFile:(id)sender
-{
-	FileChooser* fc = FileChooser.sharedInstance;
-
-	fc.path            = nil; // Disable potential work when updating filterString/currentDocument
-	fc.filterString    = @"";
-	fc.currentDocument = self.selectedDocumentUUID;
-	fc.target          = self;
-	fc.action          = @selector(fileChooserDidSelectItems:);
-	fc.path            = self.projectPath ?: self.untitledSavePath ?: NSHomeDirectory();
-
-	if(OakPasteboardEntry* entry = [OakPasteboard.findPasteboard current])
-	{
-		std::string str = to_s(entry.string);
-		if(regexp::search("\\A.*?(\\.|/).*?:\\d+\\z", str))
-		{
-			if([entry.string hasPrefix:fc.path])
-					fc.filterString = [NSString stringWithCxxString:path::relative_to(str, to_s(fc.path))];
-			else	fc.filterString = entry.string;
-		}
-	}
-
-	[fc showWindowRelativeToFrame:[self.window convertRectToScreen:[self.textView convertRect:[self.textView visibleRect] toView:nil]]];
-}
-
-- (void)fileChooserDidSelectItems:(FileChooser*)sender
-{
-	ASSERT([sender respondsToSelector:@selector(selectedItems)]);
-	[self openItems:[sender selectedItems] closingOtherTabs:OakIsAlternateKeyOrMouseEvent() activate:YES];
-}
 
 // ===========
 // = Methods =
@@ -2090,12 +2056,12 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 // = Touch Bar =
 // =============
 
-static NSTouchBarItemIdentifier kTouchBarCustomizationIdentifier = @"com.macromates.TextMate.touch-bar.customization-identifier";
-static NSTouchBarItemIdentifier kTouchBarTabNavigationIdentifier = @"com.macromates.TextMate.touch-bar.tab-navigation";
-static NSTouchBarItemIdentifier kTouchBarNewTabItemIdentifier    = @"com.macromates.TextMate.touch-bar.new-tab";
-static NSTouchBarItemIdentifier kTouchBarQuickOpenItemIdentifier = @"com.macromates.TextMate.touch-bar.quick-open";
-static NSTouchBarItemIdentifier kTouchBarFindItemIdentifier      = @"com.macromates.TextMate.touch-bar.find";
-static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.macromates.TextMate.touch-bar.favorites";
+static NSTouchBarItemIdentifier kTouchBarCustomizationIdentifier = @"com.wonky.works.myTextMate.touch-bar.customization-identifier";
+static NSTouchBarItemIdentifier kTouchBarTabNavigationIdentifier = @"com.wonky.works.myTextMate.touch-bar.tab-navigation";
+static NSTouchBarItemIdentifier kTouchBarNewTabItemIdentifier    = @"com.wonky.works.myTextMate.touch-bar.new-tab";
+
+static NSTouchBarItemIdentifier kTouchBarFindItemIdentifier      = @"com.wonky.works.myTextMate.touch-bar.find";
+static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.wonky.works.myTextMate.touch-bar.favorites";
 
 - (NSTouchBar*)makeTouchBar
 {
@@ -2105,7 +2071,7 @@ static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.macroma
 		NSTouchBarItemIdentifierOtherItemsProxy,
 		kTouchBarTabNavigationIdentifier,
 		kTouchBarNewTabItemIdentifier,
-		kTouchBarQuickOpenItemIdentifier,
+
 		NSTouchBarItemIdentifierFlexibleSpace,
 		kTouchBarFindItemIdentifier,
 		kTouchBarFavoritesItemIdentifier,
@@ -2114,7 +2080,7 @@ static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.macroma
 	bar.customizationAllowedItemIdentifiers = @[
 		kTouchBarTabNavigationIdentifier,
 		kTouchBarNewTabItemIdentifier,
-		kTouchBarQuickOpenItemIdentifier,
+
 		NSTouchBarItemIdentifierFlexibleSpace,
 		kTouchBarFindItemIdentifier,
 		kTouchBarFavoritesItemIdentifier,
@@ -2152,15 +2118,7 @@ static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.macroma
 		res.visibilityPriority = NSTouchBarItemPriorityNormal;
 		res.customizationLabel = @"New Tab";
 	}
-	else if([identifier isEqualToString:kTouchBarQuickOpenItemIdentifier])
-	{
-		NSImage* quickOpenImage = [NSImage imageNamed:@"TouchBarQuickOpenTemplate"];
-		quickOpenImage.accessibilityDescription = @"quick open";
-		res = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
-		res.view = [NSButton buttonWithImage:quickOpenImage target:self action:@selector(goToFile:)];
-		res.visibilityPriority = NSTouchBarItemPriorityNormal;
-		res.customizationLabel = @"Quick Open";
-	}
+
 	else if([identifier isEqualToString:kTouchBarFindItemIdentifier])
 	{
 		NSButton* findInProjectButton = [NSButton buttonWithImage:[NSImage imageNamed:NSImageNameTouchBarSearchTemplate] target:self action:@selector(orderFrontFindPanel:)];

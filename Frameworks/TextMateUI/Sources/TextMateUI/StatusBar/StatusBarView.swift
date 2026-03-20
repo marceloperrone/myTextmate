@@ -11,8 +11,6 @@ public struct StatusBarView: View {
 
 	public var body: some View {
 		VStack(spacing: 0) {
-			Divider()
-
 			HStack(spacing: 0) {
 				selectionDisplay
 					.frame(minWidth: 50, maxWidth: 225)
@@ -43,7 +41,8 @@ public struct StatusBarView: View {
 			.padding(.horizontal, 10)
 			.frame(height: 24)
 		}
-		.background(.bar)
+		.background(.clear)
+		.glassEffect(.regular, in: .rect)
 	}
 
 	// MARK: - Selection Display
@@ -164,7 +163,7 @@ struct BundleItemsPopUpView: NSViewRepresentable {
 		Coordinator(model: model)
 	}
 
-	class Coordinator: NSObject {
+	@MainActor class Coordinator: NSObject {
 		let model: StatusBarViewModel
 		init(model: StatusBarViewModel) { self.model = model }
 
@@ -212,7 +211,7 @@ struct SymbolPopUpView: NSViewRepresentable {
 		Coordinator(model: model)
 	}
 
-	class Coordinator: NSObject {
+	@MainActor class Coordinator: NSObject {
 		let model: StatusBarViewModel
 		init(model: StatusBarViewModel) { self.model = model }
 

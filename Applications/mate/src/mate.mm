@@ -56,10 +56,12 @@ static NSURL* find_app ()
 {
 	disable_sudo_helper_t helper;
 
-	if(NSURL* url = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.macromates.TextMate"])
+	if(NSURL* url = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.wonky.works.myTextMate"])
+		return url;
+	if(NSURL* url = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.wonky.works.myTextMate"])
 		return url;
 
-	fprintf(stderr, "Can’t find TextMate.app\n");
+	fprintf(stderr, "Can’t find myTextmate.app\n");
 	exit(EX_UNAVAILABLE);
 }
 

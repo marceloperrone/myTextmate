@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "TextMateUI",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "TextMateUI", targets: ["TextMateUI"]),
         .library(name: "TextMateBridge", targets: ["TextMateBridge"]),

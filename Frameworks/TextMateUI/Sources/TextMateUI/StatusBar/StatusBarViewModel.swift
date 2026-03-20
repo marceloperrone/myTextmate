@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 @objc(StatusBarViewModel)
 @Observable
 public final class StatusBarViewModel: NSObject {

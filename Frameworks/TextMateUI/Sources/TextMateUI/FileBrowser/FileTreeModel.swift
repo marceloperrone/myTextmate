@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Observable model wrapping the existing FileItem ObjC objects.
 /// Uses @objc(FileTreeModel) so ObjC can instantiate via NSClassFromString("FileTreeModel").
+@MainActor
 @objc(FileTreeModel)
 @Observable
 public final class FileTreeModel: NSObject {
@@ -215,9 +216,9 @@ public final class FileTreeModel: NSObject {
 
     public func loadDirectory(at url: URL) {
         isLoading = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let items = Self.loadItems(at: url)
-            DispatchQueue.main.async {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let items = FileTreeModel.loadItems(at: url)
+            await MainActor.run { [weak self] in
                 self?.rootItems = items
                 self?.isLoading = false
             }
@@ -241,7 +242,7 @@ public final class FileTreeModel: NSObject {
 
     // MARK: - File Loading
 
-    private static func loadItems(at url: URL) -> [FileItemWrapper] {
+    nonisolated private static func loadItems(at url: URL) -> [FileItemWrapper] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(
             at: url,

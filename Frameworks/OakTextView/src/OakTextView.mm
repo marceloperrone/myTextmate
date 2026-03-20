@@ -284,48 +284,6 @@ struct document_view_t : ng::buffer_api_t
 		return [_document_editor buffer].prev_mark(SIZE_T_MAX, type).second != NULL_STR;
 	}
 
-	bool current_line_has_marks (std::string const& type) const
-	{
-		ng::buffer_t const& buf = [_document_editor buffer];
-		size_t n = buf.convert(ranges().last().max().index).line;
-		return !buf.get_marks(buf.begin(n), buf.eol(n), type).empty();
-	}
-
-	void jump_to_next_bookmark (std::string const& type = NULL_STR)
-	{
-		std::pair<size_t, std::string> const& pair = [_document_editor buffer].next_mark(ranges().last().max().index, type);
-		if(pair.second != NULL_STR)
-			set_ranges(ng::index_t(pair.first));
-	}
-
-	void jump_to_previous_bookmark (std::string const& type = NULL_STR)
-	{
-		std::pair<size_t, std::string> const& pair = [_document_editor buffer].prev_mark(ranges().last().max().index, type);
-		if(pair.second != NULL_STR)
-			set_ranges(ng::index_t(pair.first));
-	}
-
-	void toggle_current_bookmark ()
-	{
-		ng::buffer_t& buf = [_document_editor buffer];
-		size_t n = buf.convert(ranges().last().max().index).line;
-
-		std::vector<size_t> toRemove;
-		for(auto const& pair : buf.get_marks(buf.begin(n), buf.eol(n), to_s(OakDocumentBookmarkIdentifier)))
-			toRemove.push_back(pair.first);
-
-		if(toRemove.empty())
-		{
-			buf.set_mark(ranges().last().max().index, to_s(OakDocumentBookmarkIdentifier));
-		}
-		else
-		{
-			for(auto const& index : toRemove)
-				buf.remove_mark(index, to_s(OakDocumentBookmarkIdentifier));
-		}
-		[NSNotificationCenter.defaultCenter postNotificationName:OakDocumentMarksDidChangeNotification object:_document];
-	}
-
 	std::string invisibles_map;
 
 	// ============
@@ -823,11 +781,8 @@ static std::string shell_quote (std::vector<std::string> paths)
 
 	NSString* appearance = [NSUserDefaults.standardUserDefaults stringForKey:@"themeAppearance"];
 	BOOL darkMode = [appearance isEqualToString:@"dark"];
-	if(@available(macos 10.14, *))
-	{
-		if(!darkMode && ![appearance isEqualToString:@"light"]) // If it is not ‘light’ then assume ‘auto’
-			darkMode = [[self.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
-	}
+	if(!darkMode && ![appearance isEqualToString:@"light"]) // If it is not ‘light’ then assume ‘auto’
+		darkMode = [[self.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
 
 	return [NSUserDefaults.standardUserDefaults stringForKey:darkMode ? @"darkModeThemeUUID" : @"universalThemeUUID"];
 }
@@ -2440,7 +2395,6 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 		{ @"Paste",                   @selector(paste:)                         },
 		{ nil,                        nil                                       },
 		{ @"Fold/Unfold",             @selector(toggleCurrentFolding:)          },
-		{ @"Filter Through Command…", @selector(orderFrontRunCommandWindow:)    },
 	};
 
 	NSMenu* menu = [self checkSpellingMenuForRanges:someRanges];
@@ -2887,122 +2841,7 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 - (IBAction)replaceAll:(id)sender                     { [self recordSelector:_cmd andPerform:kFindOperationReplaceAll            withOptions:find::all_matches]; }
 - (IBAction)replaceAllInSelection:(id)sender          { [self recordSelector:_cmd andPerform:kFindOperationReplaceAllInSelection withOptions:find::all_matches]; }
 
-// ============================
-// = Bookmark Related Actions =
-// ============================
 
-- (IBAction)toggleCurrentBookmark:(id)sender
-{
-	if(!documentView)
-		return;
-	documentView->toggle_current_bookmark();
-}
-
-- (IBAction)goToNextBookmark:(id)sender
-{
-	if(!documentView)
-		return;
-	AUTO_REFRESH;
-	documentView->jump_to_next_bookmark(to_s(OakDocumentBookmarkIdentifier));
-}
-
-- (IBAction)goToPreviousBookmark:(id)sender
-{
-	if(!documentView)
-		return;
-	AUTO_REFRESH;
-	documentView->jump_to_previous_bookmark(to_s(OakDocumentBookmarkIdentifier));
-}
-
-- (IBAction)jumpToNextMark:(id)sender
-{
-	if(!documentView)
-		return;
-	AUTO_REFRESH;
-	documentView->jump_to_next_bookmark();
-}
-
-- (IBAction)jumpToPreviousMark:(id)sender
-{
-	if(!documentView)
-		return;
-	AUTO_REFRESH;
-	documentView->jump_to_previous_bookmark();
-}
-
-// ============================
-
-// =============
-// = Touch Bar =
-// =============
-
-static NSTouchBarItemIdentifier kOTVTouchBarCustomizationIdentifier          = @"com.macromates.TextMate.otv.customizationIdentifer";
-static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierNavigateBookmarks  = @"com.macromates.TextMate.otv.navigateBookmarks";
-static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierAddRemoveBookmark  = @"com.macromates.TextMate.otv.addRemoveBookmark";
-
-- (NSTouchBar*)makeTouchBar
-{
-	NSTouchBar* touchBar = [NSTouchBar new];
-	touchBar.delegate = self;
-	touchBar.defaultItemIdentifiers = @[ kOTVTouchBarItemIdentifierAddRemoveBookmark, kOTVTouchBarItemIdentifierNavigateBookmarks, ];
-	touchBar.customizationIdentifier = kOTVTouchBarCustomizationIdentifier;
-	touchBar.customizationAllowedItemIdentifiers = @[ kOTVTouchBarItemIdentifierAddRemoveBookmark, kOTVTouchBarItemIdentifierNavigateBookmarks, ];
-
-	return touchBar;
-}
-
-- (NSTouchBarItem*)touchBar:(NSTouchBar*)touchBar makeItemForIdentifier:(NSTouchBarItemIdentifier)identifier
-{
-	if([identifier isEqualToString:kOTVTouchBarItemIdentifierAddRemoveBookmark])
-	{
-		NSImage* bookmarkImage = [NSImage imageNamed:@"RemoveBookmarkTemplate" inSameBundleAsClass:[self class]];
-		bookmarkImage.accessibilityDescription = @"add or remove bookmark";
-
-		NSCustomTouchBarItem* bookmarkButtonTouchBarItem = [[NSCustomTouchBarItem alloc] initWithIdentifier:kOTVTouchBarItemIdentifierAddRemoveBookmark];
-		bookmarkButtonTouchBarItem.view = [NSButton buttonWithImage:bookmarkImage target:self action:@selector(toggleCurrentBookmark:)];
-		bookmarkButtonTouchBarItem.visibilityPriority = NSTouchBarItemPriorityHigh;
-		bookmarkButtonTouchBarItem.customizationLabel = @"Add/Remove Bookmark";
-
-		return bookmarkButtonTouchBarItem;
-	}
-	else if([identifier isEqualToString:kOTVTouchBarItemIdentifierNavigateBookmarks])
-	{
-		NSSegmentedControl* navigateMarkerSegmentedControl = [NSSegmentedControl new];
-		navigateMarkerSegmentedControl.segmentCount = 2;
-		navigateMarkerSegmentedControl.target       = self;
-		navigateMarkerSegmentedControl.action       = @selector(performNavigateBookmarksSegmentAction:);
-		navigateMarkerSegmentedControl.trackingMode = NSSegmentSwitchTrackingMomentary;
-		navigateMarkerSegmentedControl.segmentStyle = NSSegmentStyleSeparated;
-
-		NSImage* goUpImage = [NSImage imageNamed:NSImageNameTouchBarGoUpTemplate];
-		goUpImage.accessibilityDescription = @"previous bookmark";
-		NSImage* goDownImage = [NSImage imageNamed:NSImageNameTouchBarGoDownTemplate];
-		goDownImage.accessibilityDescription = @"next bookmark";
-
-		[navigateMarkerSegmentedControl setImage:goUpImage forSegment:0];
-		[navigateMarkerSegmentedControl setImage:goDownImage forSegment:1];
-
-		NSCustomTouchBarItem* markersTouchBarItem = [[NSCustomTouchBarItem alloc] initWithIdentifier:kOTVTouchBarItemIdentifierNavigateBookmarks];
-		markersTouchBarItem.view = navigateMarkerSegmentedControl;
-		markersTouchBarItem.visibilityPriority = NSTouchBarItemPriorityHigh;
-		markersTouchBarItem.customizationLabel = @"Previous/Next Bookmark";
-
-		return markersTouchBarItem;
-	}
-
-	return nil;
-}
-
-- (void)performNavigateBookmarksSegmentAction:(id)sender
-{
-	switch([sender selectedSegment])
-	{
-		case 0: [self goToPreviousBookmark:self]; break;
-		case 1: [self goToNextBookmark:self];     break;
-	}
-}
-
-// =============
 
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions // For Dialog popup
 {
@@ -3098,12 +2937,6 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 		[aMenuItem setTitle:@"Redo"];
 		return documentView->can_redo();
 	}
-	else if([aMenuItem action] == @selector(toggleCurrentBookmark:))
-		[aMenuItem setTitle:documentView && documentView->current_line_has_marks(to_s(OakDocumentBookmarkIdentifier)) ? @"Remove Bookmark" : @"Set Bookmark"];
-	else if([aMenuItem action] == @selector(goToNextBookmark:) || [aMenuItem action] == @selector(goToPreviousBookmark:))
-		return documentView && documentView->has_marks(to_s(OakDocumentBookmarkIdentifier));
-	else if([aMenuItem action] == @selector(jumpToNextMark:) || [aMenuItem action] == @selector(jumpToPreviousMark:))
-		return documentView && documentView->has_marks();
 	else if([aMenuItem action] == @selector(performBundleItemWithUUIDStringFrom:))
 	{
 		if(bundles::item_ptr bundleItem = bundles::lookup(to_s(aMenuItem.representedObject)))

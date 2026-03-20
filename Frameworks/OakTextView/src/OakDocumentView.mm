@@ -2,6 +2,7 @@
 // GutterView removed — line numbers stripped for Tahoe compatibility
 
 // OTVStatusBar replaced by SwiftUI StatusBarView (via StatusBarViewModel)
+#import <OakFoundation/OakFindProtocol.h>
 #import <document/OakDocument.h>
 #import <file/type.h>
 #import <text/ctype.h>
@@ -24,6 +25,31 @@
 static NSString* const kUserDefaultsLineNumberScaleFactorKey = @"lineNumberScaleFactor";
 static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontName";
 
+// MARK: - FindBarFindServer (OakFindServerProtocol bridge)
+
+@interface FindBarFindServer : NSObject <OakFindServerProtocol>
+@property (nonatomic, weak) NSObject* findBarModel;
+@property (nonatomic) find_operation_t findOperation;
+@property (nonatomic) find::options_t findOptions;
+@property (nonatomic) NSString* findString;
+@property (nonatomic) NSString* replaceString;
+@end
+
+@implementation FindBarFindServer
+- (void)didFind:(NSUInteger)aNumber occurrencesOf:(NSString*)aFindString atPosition:(text::pos_t const&)aPosition wrapped:(BOOL)didWrap
+{
+	[_findBarModel setValue:@(aNumber) forKey:@"matchCount"];
+}
+
+- (void)didReplace:(NSUInteger)aNumber occurrencesOf:(NSString*)aFindString with:(NSString*)aReplacementString
+{
+	// After replace, re-trigger a count to update the match display
+	[_findBarModel setValue:@(aNumber) forKey:@"matchCount"];
+}
+@end
+
+// MARK: - OakDocumentView
+
 @interface OakDocumentView () <NSAccessibilityGroup>
 {
 
@@ -33,6 +59,8 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	NSMutableArray* bottomAuxiliaryViews;
 
 	NSObject* statusBarModel;
+	NSObject* findBarModel;
+	NSView* findBarView;
 
 	IBOutlet NSPanel* tabSizeSelectorPanel;
 }
@@ -264,23 +292,7 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		[textScrollView setBackgroundColor:[NSColor colorWithCGColor:theme->background(to_s(self.document.fileType))]];
 		[textScrollView setScrollerKnobStyle:theme->is_dark() ? NSScrollerKnobStyleLight : NSScrollerKnobStyleDark];
 
-		if(@available(macOS 10.14, *))
-		{
-			[_textView setIbeamCursor:NSCursor.IBeamCursor];
-		}
-		else
-		{
-			if(theme->is_dark())
-			{
-				NSImage* whiteIBeamImage = [NSImage imageNamed:@"IBeam white" inSameBundleAsClass:[self class]];		
-				[whiteIBeamImage setSize:NSCursor.IBeamCursor.image.size];
-				[_textView setIbeamCursor:[[NSCursor alloc] initWithImage:whiteIBeamImage hotSpot:NSMakePoint(4, 9)]];
-			}
-			else
-			{
-				[_textView setIbeamCursor:NSCursor.IBeamCursor];
-			}
-		}
+		[_textView setIbeamCursor:NSCursor.IBeamCursor];
 
 		self.window.backgroundColor = [NSColor colorWithCGColor:theme->background(to_s(self.document.fileType))];
 	}
@@ -346,6 +358,183 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		return;
 	[aView removeFromSuperview];
 	[self setNeedsUpdateConstraints:YES];
+}
+
+// ================
+// = Find Bar =
+// ================
+
+- (BOOL)isFindBarVisible
+{
+	return findBarView != nil;
+}
+
+- (void)showFindBar
+{
+	if(findBarView)
+	{
+		[self.window makeFirstResponder:findBarView];
+		return;
+	}
+
+	findBarModel = [[NSClassFromString(@"FindBarModel") alloc] init];
+	[findBarModel setValue:self forKey:@"target"];
+
+	// Pre-populate from find pasteboard
+	OakPasteboardEntry* entry = [OakPasteboard.findPasteboard current];
+	if(entry.string.length)
+		[findBarModel setValue:entry.string forKey:@"findString"];
+
+	// Sync options from pasteboard
+	[findBarModel setValue:@(entry.regularExpression) forKey:@"regularExpression"];
+	[findBarModel setValue:@(!!(entry.findOptions & find::ignore_case)) forKey:@"ignoreCase"];
+	[findBarModel setValue:@(!!(entry.findOptions & find::wrap_around)) forKey:@"wrapAround"];
+
+	// Populate replace from replace pasteboard
+	OakPasteboardEntry* replaceEntry = [OakPasteboard.replacePasteboard current];
+	if(replaceEntry.string.length)
+		[findBarModel setValue:replaceEntry.string forKey:@"replaceString"];
+
+	findBarView = [findBarModel valueForKey:@"hostingView"];
+	[self addAuxiliaryView:findBarView atEdge:NSMaxYEdge];
+	[self.window makeFirstResponder:findBarView];
+}
+
+- (void)showFindBarWithSelection
+{
+	NSString* selection = [_textView accessibilitySelectedText];
+	[self showFindBar];
+	if(selection.length > 0 && [selection rangeOfString:@"\n"].location == NSNotFound)
+		[findBarModel setValue:selection forKey:@"findString"];
+}
+
+- (void)hideFindBar
+{
+	if(!findBarView)
+		return;
+
+	[self removeAuxiliaryView:findBarView];
+	findBarView = nil;
+	findBarModel = nil;
+	[self.window makeFirstResponder:_textView];
+}
+
+- (find::options_t)findBarOptions
+{
+	find::options_t options = find::none;
+	if([[findBarModel valueForKey:@"regularExpression"] boolValue])
+		options |= find::regular_expression;
+	if([[findBarModel valueForKey:@"ignoreCase"] boolValue])
+		options |= find::ignore_case;
+	if([[findBarModel valueForKey:@"wrapAround"] boolValue])
+		options |= find::wrap_around;
+	return options;
+}
+
+- (void)findBarUpdatePasteboard
+{
+	NSString* findString = [findBarModel valueForKey:@"findString"];
+	if(findString.length == 0)
+		return;
+
+	NSMutableDictionary* options = [NSMutableDictionary dictionary];
+	if([[findBarModel valueForKey:@"regularExpression"] boolValue])
+		options[OakFindRegularExpressionOption] = @YES;
+	if([[findBarModel valueForKey:@"ignoreCase"] boolValue])
+		options[@"ignoreCase"] = @YES;
+
+	[OakPasteboard.findPasteboard addEntryWithString:findString options:options];
+}
+
+- (void)findBarFindNext:(id)sender
+{
+	[self findBarUpdatePasteboard];
+
+	FindBarFindServer* server = [FindBarFindServer new];
+	server.findBarModel  = findBarModel;
+	server.findString    = [findBarModel valueForKey:@"findString"];
+	server.replaceString = [findBarModel valueForKey:@"replaceString"];
+	server.findOperation = kFindOperationFind;
+	server.findOptions   = [self findBarOptions];
+
+	[(id<OakFindClientProtocol>)_textView performFindOperation:server];
+}
+
+- (void)findBarFindPrevious:(id)sender
+{
+	[self findBarUpdatePasteboard];
+
+	FindBarFindServer* server = [FindBarFindServer new];
+	server.findBarModel  = findBarModel;
+	server.findString    = [findBarModel valueForKey:@"findString"];
+	server.replaceString = [findBarModel valueForKey:@"replaceString"];
+	server.findOperation = kFindOperationFind;
+	server.findOptions   = [self findBarOptions] | find::backwards;
+
+	[(id<OakFindClientProtocol>)_textView performFindOperation:server];
+}
+
+- (void)findBarReplace:(id)sender
+{
+	NSString* replaceString = [findBarModel valueForKey:@"replaceString"];
+	[OakPasteboard.replacePasteboard addEntryWithString:replaceString ?: @""];
+	[self findBarUpdatePasteboard];
+
+	FindBarFindServer* server = [FindBarFindServer new];
+	server.findBarModel  = findBarModel;
+	server.findString    = [findBarModel valueForKey:@"findString"];
+	server.replaceString = replaceString;
+	server.findOperation = kFindOperationReplaceAndFind;
+	server.findOptions   = [self findBarOptions];
+
+	[(id<OakFindClientProtocol>)_textView performFindOperation:server];
+}
+
+- (void)findBarReplaceAll:(id)sender
+{
+	NSString* replaceString = [findBarModel valueForKey:@"replaceString"];
+	[OakPasteboard.replacePasteboard addEntryWithString:replaceString ?: @""];
+	[self findBarUpdatePasteboard];
+
+	FindBarFindServer* server = [FindBarFindServer new];
+	server.findBarModel  = findBarModel;
+	server.findString    = [findBarModel valueForKey:@"findString"];
+	server.replaceString = replaceString;
+	server.findOperation = kFindOperationReplaceAll;
+	server.findOptions   = [self findBarOptions] | find::all_matches;
+
+	[(id<OakFindClientProtocol>)_textView performFindOperation:server];
+}
+
+- (void)findBarDismiss:(id)sender
+{
+	[self hideFindBar];
+}
+
+- (void)findBarDidChangeSearchString:(id)sender
+{
+	// Count matches when search string changes
+	NSString* findString = [findBarModel valueForKey:@"findString"];
+	if(findString.length == 0)
+	{
+		[findBarModel setValue:@0 forKey:@"matchCount"];
+		return;
+	}
+
+	FindBarFindServer* server = [FindBarFindServer new];
+	server.findBarModel  = findBarModel;
+	server.findString    = findString;
+	server.replaceString = @"";
+	server.findOperation = kFindOperationCount;
+	server.findOptions   = [self findBarOptions] | find::all_matches;
+
+	[(id<OakFindClientProtocol>)_textView performFindOperation:server];
+}
+
+- (void)findBarDidChangeOptions:(id)sender
+{
+	// Re-count when options change
+	[self findBarDidChangeSearchString:sender];
 }
 
 // ======================

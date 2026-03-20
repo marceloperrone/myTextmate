@@ -904,7 +904,8 @@ module Target
           module_name = target[:name].gsub(/[^a-zA-Z0-9_]/, '_')
           arch = target[:variables].include?('arch') ? target[:variables]['arch'] : nil
           arch_suffix = arch ? "-#{arch}" : ""
-          arch_target = arch ? "#{arch}-apple-macos14.0" : "arm64-apple-macos14.0"
+          min_os = target[:variables]['APP_MIN_OS'] || '14.0'
+          arch_target = arch ? "#{arch}-apple-macos#{min_os}" : "arm64-apple-macos#{min_os}"
 
           output_dir = File.join(target[:builddir], "_CompileSwift#{arch_suffix}", target[:dir] || '')
           output_object = File.join(output_dir, "#{module_name}.o")
@@ -989,7 +990,8 @@ module Target
           ln_flags = ln_flags.reject { |f| f =~ /^-mmacosx-version-min=/ || f == '-fobjc-link-runtime' || f =~ /^-flto/ || f =~ /^-Wl,-cache_path_lto/ }
           # Convert -Wl,flag to -Xlinker flag for swiftc
           ln_flags = ln_flags.flat_map { |f| f =~ /^-Wl,(.+)/ ? $1.split(',').flat_map { |a| ['-Xlinker', a] } : [f] }
-          ln_flags << "-target arm64-apple-macos14.0"
+          swift_min_os = target[:variables]['APP_MIN_OS'] || '14.0'
+          ln_flags << "-target arm64-apple-macos#{swift_min_os}"
         end
 
         executable = if target[:arch].is_a?(String)

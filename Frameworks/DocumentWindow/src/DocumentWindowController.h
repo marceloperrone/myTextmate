@@ -61,8 +61,6 @@
 // =============================
 
 - (IBAction)orderFrontFindPanel:(id)sender;
-- (IBAction)orderFrontRunCommandWindow:(id)sender;
-- (IBAction)goToFile:(id)sender;
 
 // ==================
 // = OakFileBrowser =

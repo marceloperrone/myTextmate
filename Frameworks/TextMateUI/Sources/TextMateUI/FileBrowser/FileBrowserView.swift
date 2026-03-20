@@ -19,8 +19,6 @@ public struct FileBrowserView: View {
             // Header with navigation
             FileBrowserHeaderView(navigation: model.navigation)
 
-            Divider()
-
             // File tree
             if model.isLoading {
                 Spacer()

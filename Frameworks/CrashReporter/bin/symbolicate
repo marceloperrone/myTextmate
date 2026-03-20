@@ -5,7 +5,7 @@ require "fileutils"
 require "shellwords"
 
 DSYM_ARCHIVE_DIR = "#{ENV['HOME']}/build/TextMate/archive/dsym"
-DSYM_CACHE_DIR   = "#{ENV['HOME']}/Library/Caches/com.macromates.TextMate/dsym"
+DSYM_CACHE_DIR   = "#{ENV['HOME']}/Library/Caches/com.wonky.works.myTextMate/dsym"
 
 BinaryImage = Struct.new(:first, :last, :name, :file)
 

@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Observable wrapper around SettingsBridge for SwiftUI bindings.
 /// Routes keys to either NSUserDefaults or the C++ settings_t engine.
+@MainActor
 @Observable
 public final class SettingsStore {
     public static let shared = SettingsStore()

@@ -98,7 +98,7 @@ namespace document
 		{
 			auto marks = _paths.find(path);
 			if(marks == _paths.end())
-				marks = _paths.emplace(path, std::map<std::string, std::map<text::pos_t, std::string>>{ { to_s(OakDocumentBookmarkIdentifier), load_bookmarks(path) } }).first;
+				marks = _paths.emplace(path, std::map<std::string, std::map<text::pos_t, std::string>>{}).first;
 			return marks->second;
 		}
 
@@ -112,28 +112,7 @@ namespace document
 			return res;
 		}
 
-		static std::map<text::pos_t, std::string> load_bookmarks (std::string const& path)
-		{
-			std::map<text::pos_t, std::string> res;
-
-			std::string const str = path::get_attr(path, "com.macromates.bookmarks");
-			if(str == NULL_STR)
-				return res;
-
-			plist::any_t const& plist = plist::parse(str);
-			if(plist::array_t const* array = boost::get<plist::array_t>(&plist))
-			{
-				for(auto const& bm : *array)
-				{
-					if(std::string const* str = boost::get<std::string>(&bm))
-						res.emplace(*str, std::string());
-				}
-			}
-
-			return res;
-		}
-
-		// path → mark type → position → mark
+			// path → mark type → position → mark
 		std::map<std::string, std::map<std::string, std::map<text::pos_t, std::string>>> _paths;
 
 	} marks;
@@ -168,7 +147,6 @@ NSNotificationName const OakDocumentWillSaveNotification         = @"OakDocument
 NSNotificationName const OakDocumentDidSaveNotification          = @"OakDocumentDidSaveNotification";
 NSNotificationName const OakDocumentWillCloseNotification        = @"OakDocumentWillCloseNotification";
 NSNotificationName const OakDocumentWillShowAlertNotification    = @"OakDocumentWillShowAlertNotification";
-NSString* OakDocumentBookmarkIdentifier                          = @"bookmark";
 
 static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 
@@ -338,18 +316,18 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	if(self = [self init])
 	{
 		std::string const path = to_s(backupPath);
-		_identifier     = [[NSUUID alloc] initWithUUIDString:to_ns(path::get_attr(path, "com.macromates.backup.identifier"))];
+		_identifier     = [[NSUUID alloc] initWithUUIDString:to_ns(path::get_attr(path, "com.wonky.works.myTextMate.backup.identifier"))];
 		_backupPath     = backupPath;
 
-		_path           = to_ns(path::resolve(path::get_attr(path, "com.macromates.backup.path")));
+		_path           = to_ns(path::resolve(path::get_attr(path, "com.wonky.works.myTextMate.backup.path")));
 		_onDisk         = _path && access([_path fileSystemRepresentation], F_OK) == 0;
-		_fileType       = to_ns(path::get_attr(path, "com.macromates.backup.file-type"));
-		_diskEncoding   = to_ns(path::get_attr(path, "com.macromates.backup.encoding"));
-		_diskNewlines   = to_ns(path::get_attr(path, "com.macromates.backup.newlines"));
-		_customName     = to_ns(path::get_attr(path, "com.macromates.backup.custom-name"));
-		_untitledCount  = atoi(path::get_attr(path, "com.macromates.backup.untitled-count").c_str());
+		_fileType       = to_ns(path::get_attr(path, "com.wonky.works.myTextMate.backup.file-type"));
+		_diskEncoding   = to_ns(path::get_attr(path, "com.wonky.works.myTextMate.backup.encoding"));
+		_diskNewlines   = to_ns(path::get_attr(path, "com.wonky.works.myTextMate.backup.newlines"));
+		_customName     = to_ns(path::get_attr(path, "com.wonky.works.myTextMate.backup.custom-name"));
+		_untitledCount  = atoi(path::get_attr(path, "com.wonky.works.myTextMate.backup.untitled-count").c_str());
 
-		if(path::get_attr(path, "com.macromates.backup.modified") == "YES")
+		if(path::get_attr(path, "com.wonky.works.myTextMate.backup.modified") == "YES")
 			_savedRevision = _revision-1;
 	}
 	return self;
@@ -401,7 +379,7 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	for(auto dirEntry : path::entries(dir))
 	{
 		std::string const path = path::join(dir, dirEntry->d_name);
-		std::string const uuid = path::get_attr(path, "com.macromates.backup.identifier");
+		std::string const uuid = path::get_attr(path, "com.wonky.works.myTextMate.backup.identifier");
 		if(uuid != NULL_STR && [anIdentifier isEqual:[[NSUUID alloc] initWithUUIDString:to_ns(uuid)]])
 		{
 			if(OakDocument* res = [[OakDocument alloc] initWithBackupPath:to_ns(path)])
@@ -528,12 +506,11 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 		[editor documentWillSave:self];
 
 	std::map<std::string, std::string> res = {
-		{ "com.macromates.bookmarks",      to_s([self stringifyMarksOfType:OakDocumentBookmarkIdentifier]) },
-		{ "com.macromates.selectionRange", to_s(_selection) },
-		{ "com.macromates.visibleIndex",   _visibleIndex ? to_s(_visibleIndex) : NULL_STR },
-		{ "com.macromates.crc32",          NULL_STR },
-		{ "com.macromates.folded",         NULL_STR },
-		{ "com.macromates.visibleRect",    NULL_STR }, // Clear legacy attribute
+		{ "com.wonky.works.myTextMate.selectionRange", to_s(_selection) },
+		{ "com.wonky.works.myTextMate.visibleIndex",   _visibleIndex ? to_s(_visibleIndex) : NULL_STR },
+		{ "com.wonky.works.myTextMate.crc32",          NULL_STR },
+		{ "com.wonky.works.myTextMate.folded",         NULL_STR },
+		{ "com.wonky.works.myTextMate.visibleRect",    NULL_STR }, // Clear legacy attribute
 	};
 
 	if(_buffer && OakNotEmptyString(_folded))
@@ -543,8 +520,8 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 			crc32.process_bytes(bytes, len);
 		});
 
-		res["com.macromates.crc32"]  = text::format("%04x", crc32.checksum());
-		res["com.macromates.folded"] = to_s(_folded);
+		res["com.wonky.works.myTextMate.crc32"]  = text::format("%04x", crc32.checksum());
+		res["com.wonky.works.myTextMate.folded"] = to_s(_folded);
 	}
 
 	return res;
@@ -629,16 +606,16 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 
 		auto attr = [self extendedAttributeds];
 
-		attr["com.macromates.backup.path"]           = to_s(_path);
-		attr["com.macromates.backup.identifier"]     = to_s(_identifier);
-		attr["com.macromates.backup.file-type"]      = to_s(_fileType);
-		attr["com.macromates.backup.encoding"]       = to_s(_diskEncoding);
-		attr["com.macromates.backup.newlines"]       = to_s(_diskNewlines);
-		attr["com.macromates.backup.untitled-count"] = _path || _customName ? NULL_STR : std::to_string(_untitledCount);
-		attr["com.macromates.backup.custom-name"]    = to_s(_customName);
-		attr["com.macromates.backup.modified"]       = self.isDocumentEdited ? "YES" : NULL_STR;
-		attr["com.macromates.backup.tab-size"]       = std::to_string(self.tabSize);
-		attr["com.macromates.backup.soft-tabs"]      = self.softTabs ? "YES" : NULL_STR;
+		attr["com.wonky.works.myTextMate.backup.path"]           = to_s(_path);
+		attr["com.wonky.works.myTextMate.backup.identifier"]     = to_s(_identifier);
+		attr["com.wonky.works.myTextMate.backup.file-type"]      = to_s(_fileType);
+		attr["com.wonky.works.myTextMate.backup.encoding"]       = to_s(_diskEncoding);
+		attr["com.wonky.works.myTextMate.backup.newlines"]       = to_s(_diskNewlines);
+		attr["com.wonky.works.myTextMate.backup.untitled-count"] = _path || _customName ? NULL_STR : std::to_string(_untitledCount);
+		attr["com.wonky.works.myTextMate.backup.custom-name"]    = to_s(_customName);
+		attr["com.wonky.works.myTextMate.backup.modified"]       = self.isDocumentEdited ? "YES" : NULL_STR;
+		attr["com.wonky.works.myTextMate.backup.tab-size"]       = std::to_string(self.tabSize);
+		attr["com.wonky.works.myTextMate.backup.soft-tabs"]      = self.softTabs ? "YES" : NULL_STR;
 
 		path::set_attributes(temp, attr);
 
@@ -830,20 +807,20 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 	if(_path)
 		document::marks.move_to_buffer(to_s(_path), *_buffer);
 
-	auto folded = attributes.find("com.macromates.folded");
+	auto folded = attributes.find("com.wonky.works.myTextMate.folded");
 	if(folded != attributes.end())
 	{
-		auto crc32 = attributes.find("com.macromates.crc32");
+		auto crc32 = attributes.find("com.wonky.works.myTextMate.crc32");
 		if(crc32 != attributes.end() && crc32->second == text::format("%04x", content->crc32()))
 			_folded = to_ns(folded->second);
 	}
 
 	if(!_selection)
 	{
-		auto sel = attributes.find("com.macromates.selectionRange");
+		auto sel = attributes.find("com.wonky.works.myTextMate.selectionRange");
 		_selection = sel != attributes.end() ? to_ns(sel->second) : nil;
 
-		auto idx = attributes.find("com.macromates.visibleIndex");
+		auto idx = attributes.find("com.wonky.works.myTextMate.visibleIndex");
 		if(idx != attributes.end())
 		{
 			size_t index = SIZE_T_MAX, carry = 0;
@@ -1264,27 +1241,6 @@ static void* kDocumentEditedObserverContext = &kDocumentEditedObserverContext;
 		_buffer->wait_for_repair();
 		for(auto const& pair : _buffer->symbols())
 			block(_buffer->convert(pair.first), to_ns(pair.second));
-	}
-}
-
-- (void)enumerateBookmarksUsingBlock:(void(^)(text::pos_t const& pos, NSString* excerpt))block
-{
-	if(self.isLoaded && _buffer)
-	{
-		for(auto const& pair : _buffer->get_marks(0, _buffer->size(), to_s(OakDocumentBookmarkIdentifier)))
-		{
-			text::pos_t pos = _buffer->convert(pair.first);
-			block(pos, to_ns(_buffer->substr(_buffer->begin(pos.line), _buffer->eol(pos.line))));
-		}
-	}
-}
-
-- (void)enumerateBookmarksAtLine:(NSUInteger)line block:(void(^)(text::pos_t const& pos, NSString* type, NSString* payload))block
-{
-	if(self.isLoaded && _buffer)
-	{
-		for(auto const& pair : _buffer->get_marks(_buffer->begin(line), _buffer->eol(line)))
-			block(_buffer->convert(pair.first), to_ns(pair.second.first), to_ns(pair.second.second));
 	}
 }
 

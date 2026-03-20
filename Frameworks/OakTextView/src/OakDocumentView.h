@@ -10,5 +10,10 @@
 - (void)addAuxiliaryView:(NSView*)aView atEdge:(NSRectEdge)anEdge;
 - (void)removeAuxiliaryView:(NSView*)aView;
 
+- (void)showFindBar;
+- (void)showFindBarWithSelection;
+- (void)hideFindBar;
+@property (nonatomic, readonly) BOOL isFindBarVisible;
+
 - (IBAction)showSymbolChooser:(id)sender;
 @end

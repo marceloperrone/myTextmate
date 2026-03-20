@@ -11,7 +11,6 @@ extern NSNotificationName const OakDocumentWillSaveNotification;
 extern NSNotificationName const OakDocumentDidSaveNotification;
 extern NSNotificationName const OakDocumentWillCloseNotification;
 extern NSNotificationName const OakDocumentWillShowAlertNotification;
-extern NSString* OakDocumentBookmarkIdentifier;
 
 typedef NS_ENUM(NSInteger, OakDocumentIOResult) {
 	OakDocumentIOResultSuccess = 0,
@@ -93,8 +92,6 @@ typedef NS_ENUM(NSInteger, OakDocumentIOResult) {
 + (void)removeAllMarksOfType:(NSString*)aMark;
 
 - (void)enumerateSymbolsUsingBlock:(void(^)(text::pos_t const& pos, NSString* symbol))block;
-- (void)enumerateBookmarksUsingBlock:(void(^)(text::pos_t const& pos, NSString* excerpt))block;
-- (void)enumerateBookmarksAtLine:(NSUInteger)line block:(void(^)(text::pos_t const& pos, NSString* type, NSString* payload))block;
 - (void)enumerateByteRangesUsingBlock:(void(^)(char const* bytes, NSRange byteRange, BOOL* stop))block;
 - (NSArray<OakDocumentMatch*>*)matchesForString:(NSString*)searchString options:(find::options_t)options;
 - (NSArray<OakDocumentMatch*>*)matchesForString:(NSString*)searchString options:(find::options_t)options bufferSize:(NSUInteger*)bufferSize;

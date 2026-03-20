@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Observable model for the tab bar, replacing OakTabBarViewController's data arrays.
 /// Uses @objc(TabBarModel) so ObjC can instantiate via NSClassFromString("TabBarModel").
+@MainActor
 @objc(TabBarModel)
 @Observable
 public final class TabBarModel: NSObject {
@@ -41,6 +42,8 @@ public final class TabBarModel: NSObject {
     @ObservationIgnored
     @objc public lazy var titlebarViewController: NSTitlebarAccessoryViewController = {
         let hostingView = NSHostingView(rootView: TabBarView(model: self))
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = .clear
         let vc = NSTitlebarAccessoryViewController()
         vc.view = hostingView
         vc.layoutAttribute = .bottom
@@ -180,5 +183,5 @@ public struct TabItem: Identifiable, Equatable {
 // MARK: - Tab Pasteboard Support
 
 extension TabItem {
-    static let pasteboardType = NSPasteboard.PasteboardType("com.macromates.TextMate.tabItem")
+    static let pasteboardType = NSPasteboard.PasteboardType("com.wonky.works.myTextMate.tabItem")
 }

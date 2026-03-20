@@ -517,11 +517,11 @@ namespace
 
 	for(auto path : bundles::locations())
 		bundlesPaths.push_back(path::join(path, "Bundles"));
-	bundlesIndexPath = path::join(path::home(), "Library/Caches/com.macromates.TextMate/BundlesIndex.binary");
+	bundlesIndexPath = path::join(path::home(), "Library/Caches/com.wonky.works.myTextMate/BundlesIndex.binary");
 	cache.set_content_filter(&prune_dictionary);
 
 	// LEGACY bundle index used prior to 2.0-alpha.9467
-	std::string const oldPath = path::join(path::home(), "Library/Caches/com.macromates.TextMate/BundlesIndex.plist");
+	std::string const oldPath = path::join(path::home(), "Library/Caches/com.wonky.works.myTextMate/BundlesIndex.plist");
 	if(access(oldPath.c_str(), R_OK) == 0)
 	{
 		cache.load(oldPath);

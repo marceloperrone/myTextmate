@@ -9,28 +9,32 @@ public struct TabBarView: View {
     @Bindable var model: TabBarModel
     @State private var draggedTab: TabItem?
     @State private var hoveredTabID: UUID?
+    @Namespace private var tabNamespace
 
     public init(model: TabBarModel) {
         self.model = model
     }
 
     public var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(model.tabs.enumerated()), id: \.element.id) { index, tab in
-                TabItemView(
-                    tab: tab,
-                    isSelected: index == model.selectedIndex,
-                    isHovered: hoveredTabID == tab.id,
-                    onSelect: { model.selectTab(at: index) },
-                    onClose: { model.closeTab(at: index) },
-                    onDoubleClick: { model.doubleClickTab(at: index) }
-                )
-                .onHover { isHovered in
-                    hoveredTabID = isHovered ? tab.id : nil
-                }
-                .contextMenu(forIndex: index, model: model)
-                .draggable(tab.uuid.uuidString) {
-                    TabDragPreview(title: tab.displayTitle)
+        GlassEffectContainer {
+            HStack(spacing: 2) {
+                ForEach(Array(model.tabs.enumerated()), id: \.element.id) { index, tab in
+                    TabItemView(
+                        tab: tab,
+                        isSelected: index == model.selectedIndex,
+                        isHovered: hoveredTabID == tab.id,
+                        onSelect: { model.selectTab(at: index) },
+                        onClose: { model.closeTab(at: index) },
+                        onDoubleClick: { model.doubleClickTab(at: index) }
+                    )
+                    .glassEffectID(tab.id, in: tabNamespace)
+                    .onHover { isHovered in
+                        hoveredTabID = isHovered ? tab.id : nil
+                    }
+                    .contextMenu(forIndex: index, model: model)
+                    .draggable(tab.uuid.uuidString) {
+                        TabDragPreview(title: tab.displayTitle)
+                    }
                 }
             }
         }
@@ -184,18 +188,12 @@ private struct TabItemView: View {
     @ViewBuilder
     private var tabBackground: some View {
         if isSelected {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.clear)
-                    .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            } else {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.regularMaterial)
-                    .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
-            }
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.clear)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
         } else if isHovered {
             RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(.ultraThinMaterial)
+                .fill(.quaternary.opacity(0.3))
         } else {
             Color.clear
         }

@@ -1,4 +1,4 @@
-set APP_MIN_OS    "10.12"
+set APP_MIN_OS    "26.0"
 set CS_IDENTITY   "-"
 
 set C_FLAGS       "-std=c99"
@@ -43,4 +43,4 @@ config release {
 	add CS_FLAGS "--timestamp"
 }
 
-load local.rave {Applications,Frameworks,PlugIns,vendor}/*/*.rave
+load local.rave {Applications,Frameworks,vendor}/*/*.rave

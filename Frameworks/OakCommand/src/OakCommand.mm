@@ -19,7 +19,7 @@
 #import <BundleEditor/BundleEditor.h>
 
 NSNotificationName const OakCommandDidTerminateNotification = @"OakCommandDidTerminateNotification";
-NSString* const OakCommandErrorDomain                       = @"com.macromates.TextMate.ErrorDomain";
+NSString* const OakCommandErrorDomain                       = @"com.wonky.works.myTextMate.ErrorDomain";
 
 @protocol OakCommandDelegate
 - (void)updateEnvironment:(std::map<std::string, std::string>&)res forCommand:(OakCommand*)aCommand;

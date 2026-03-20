@@ -3,7 +3,6 @@ import SwiftUI
 // MARK: - Settings Window
 
 /// Main preferences window replacing Preferences.mm + OakTransitionViewController.
-/// Uses TabView with .sidebarAdaptable style on macOS 14+, or toolbar tabs on macOS 13.
 public struct SettingsWindow: View {
     @AppStorage("MASPreferences Selected Identifier View")
     private var selectedTab: SettingsTab = .files
@@ -11,20 +10,37 @@ public struct SettingsWindow: View {
     public init() {}
 
     public var body: some View {
-        TabView(selection: $selectedTab) {
-            FilesSettingsView()
-                .tabItem { Label("Files", systemImage: "doc.on.doc") }
-                .tag(SettingsTab.files)
+        VStack(spacing: 0) {
+            // Tab selector with glass effect
+            Picker("", selection: $selectedTab) {
+                ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 260)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(.clear)
+            .glassEffect(.regular, in: .rect)
 
-            ProjectsSettingsView()
-                .tabItem { Label("Projects", systemImage: "folder") }
-                .tag(SettingsTab.projects)
-
-            BundlesSettingsView()
-                .tabItem { Label("Bundles", systemImage: "shippingbox") }
-                .tag(SettingsTab.bundles)
+            // Pane content
+            ScrollView {
+                Group {
+                    switch selectedTab {
+                    case .files:
+                        FilesSettingsView()
+                    case .projects:
+                        ProjectsSettingsView()
+                    case .bundles:
+                        BundlesSettingsView()
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 622)
+        .frame(width: 622, height: 560)
     }
 }
 
@@ -44,14 +60,15 @@ public final class SettingsWindowController: NSWindowController {
 
     private init() {
         let hostingController = NSHostingController(rootView: SettingsWindow())
+        hostingController.sizingOptions = [.preferredContentSize, .minSize]
+
         let window = NSPanel(contentViewController: hostingController)
         window.title = "Settings"
+        window.setContentSize(NSSize(width: 622, height: 560))
+        window.styleMask.remove(.resizable)
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false
-
-        if #available(macOS 11.0, *) {
-            window.toolbarStyle = .preference
-        }
+        window.center()
 
         // Restore window position
         if let topLeft = UserDefaults.standard.string(forKey: "MASPreferences Frame Top Left") {

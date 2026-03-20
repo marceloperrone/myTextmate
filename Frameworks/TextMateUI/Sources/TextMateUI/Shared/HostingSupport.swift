@@ -21,8 +21,6 @@ public func makePreferencesWindow(contentViewController: NSViewController) -> NS
     let window = NSPanel(contentViewController: contentViewController)
     window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     window.hidesOnDeactivate = false
-    if #available(macOS 11.0, *) {
-        window.toolbarStyle = .preference
-    }
+    window.toolbarStyle = .preference
     return window
 }
