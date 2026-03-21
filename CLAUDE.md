@@ -40,6 +40,8 @@ All located in `Frameworks/TextMateUI/`:
 | **FileBrowser** | `FileTreeModel.swift`, `FileBrowserView.swift`, `FileItemRow.swift`, `NavigationModel.swift`, `FileBrowserHeaderView.swift` | Integrated — NavigationSplitView sidebar |
 | **Document Split** | `DocumentSplitModel.swift`, `DocumentSplitView.swift` | Integrated — top-level container |
 | **Preferences** | `SettingsWindow.swift`, `FilesSettingsView.swift`, `ProjectsSettingsView.swift`, `BundlesSettingsView.swift` | Integrated — replaces AppKit prefs panes |
+| **FindBar** | `FindBarModel.swift`, `FindBarView.swift` | Integrated — inline find/replace in OakDocumentView |
+| **About** | `AboutWindowController.swift` | Integrated — replaces AppKit AboutWindowController |
 | **Bridge** | `SettingsStore.swift`, `HostingSupport.swift` | Shared infrastructure |
 | **ObjC Bridge** | `TextMateBridge/` (`SettingsBridge.mm`, `BundlesBridge.mm`) | SPM stubs return mock data for previews; rave build uses real C++ implementations in `Frameworks/TextMateBridge/src/` |
 
@@ -222,25 +224,26 @@ bin/                 Build scripts (rave)
 - [x] **Update SPM bridge stubs** with mock data for SwiftUI previews (settings defaults + 12 grammar entries)
 - **Note**: TextMateBridge C++ stubs (in SPM) remain stubs — the rave build uses the real implementations in `Frameworks/TextMateBridge/src/`
 
-### Phase 1: Window Chrome (high visual impact) ← NEXT
+### Phase 1: Window Chrome ✅ COMPLETE
 
-- [ ] **Toolbar modernization** — adopt `NSToolbar` with `.unifiedTitleAndToolbar` style; replace manual titlebar accessory with native toolbar items
-- [ ] **Liquid Glass** — apply Tahoe's translucent glass material to sidebar, tab bar, toolbar (macOS 26 is now baseline, no `#available` guards needed)
-- [ ] **Tab bar refinement** — evaluate adopting native `NSTabGroup` or keep custom SwiftUI tabs with Tahoe styling (TabBarView already has `.glassEffect` on selected tabs)
-- [ ] **Window style** — `.windowStyle(.glass)` for the main window if using SwiftUI window management
+- [x] **Toolbar modernization** — `NSToolbar` with `NSWindowToolbarStyleUnified`, sidebar toggle + tracking separator, full `NSToolbarDelegate` in DocumentWindowController
+- [x] **Liquid Glass** — `.glassEffect(.regular)` applied to TabBar, StatusBar, FileBrowserHeader, SettingsWindow, FindBar; `.glassEffect(.regular.interactive())` on selected tabs with `GlassEffectContainer`
+- [x] **Tab bar refinement** — kept custom SwiftUI tabs with Tahoe glass styling (decided against `NSTabGroup`)
+- [x] **Window style** — `NSWindowToolbarStyleUnified` + `NSWindowStyleMaskFullSizeContentView` for native Tahoe chrome
 
-### Phase 2: Panels & Dialogs
+### Phase 2: Panels & Dialogs — PARTIALLY STARTED
 
-- [ ] **Find & Replace** — rewrite `Find/` framework UI in SwiftUI (keep C++ regex engine)
-- [ ] **Open Quickly** — rewrite `OakFilterList/` chooser in SwiftUI with modern search field
-- [ ] **Bundle Editor** — rewrite `BundleEditor/` in SwiftUI
-- [ ] **Go To Line/Symbol** — SwiftUI popovers replacing legacy panels
+- [x] **Find & Replace (inline)** — SwiftUI `FindBarModel` + `FindBarView` with glass effect, integrated in `OakDocumentView` via `NSClassFromString`. Supports find/replace fields, match counter, regex/case/wrap options, prev/next navigation, replace one/all.
+- [ ] **Find & Replace (project search)** — floating Find panel (`Find/` framework: `Find.mm`, `FFResultsViewController`, etc.) still legacy AppKit. Handles folder/project/open-files search with results tree view.
+- [ ] **Open Quickly** — `OakFilterList/` (~2,500 lines) fully legacy AppKit. `FileChooser.mm`, `SymbolChooser.mm`, `BundleItemChooser.mm` all still active.
+- [ ] **Bundle Editor** — `BundleEditor.mm` (1,051 lines) still pure AppKit with NSBrowser + OakDocumentView + PropertiesViewController.
+- [ ] **Go To Line/Symbol** — Go To Line is a legacy NSPanel in AppController. Symbol chooser is legacy `SymbolChooser.mm`. Status bar symbol dropdown is SwiftUI (`SymbolPopUpView`) but wraps NSPopUpButton and calls back into ObjC.
 
-### Phase 3: Reduce ObjC++ Coordination Layer
+### Phase 3: Reduce ObjC++ Coordination Layer — NOT STARTED
 
-- [ ] **Slim DocumentWindowController** — extract remaining logic into Swift; goal is for it to be a thin shell that owns OakTextView and delegates everything else to Swift
-- [ ] **AppController → SwiftUI App lifecycle** — evaluate migrating from `NSApplicationDelegate` to `@main struct TextMateApp: App {}` (major change, careful evaluation needed)
-- [ ] **Menu system** — evaluate SwiftUI `CommandMenu` / `Commands` vs keeping `MenuBuilder` (MenuBuilder may be more flexible for dynamic bundle menus)
+- [ ] **Slim DocumentWindowController** — currently ~2,620 lines (grew from ~1,500 as SwiftUI integration was added on top). Only ~15% delegated to Swift (UI marshalling). Goal: extract TabBarController, DocumentIOCoordinator, window title logic to Swift; reduce to ~1,200 line thin shell.
+- [ ] **AppController → SwiftUI App lifecycle** — still traditional `NSApplicationDelegate` (809 lines), entry point is `NSApplicationMain()` in `main.mm`. No `@main struct` exists. Major change requiring careful evaluation.
+- [ ] **Menu system** — entirely MenuBuilder (ObjC++). No SwiftUI `CommandMenu`/`Commands`. MenuBuilder is well-suited for dynamic bundle menus and may intentionally stay as-is.
 
 ### Phase 4: Editor View Integration
 
@@ -278,7 +281,7 @@ bin/                 Build scripts (rave)
 
 | File | Lines | Role |
 |------|-------|------|
-| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | ~1500 | Main window orchestration hub |
+| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | ~2620 | Main window orchestration hub |
 | `Applications/TextMate/src/AppController.mm` | 809 | App delegate, menus, lifecycle |
 | `Frameworks/OakTextView/src/OakTextView.mm` | Large | Core text editor view |
 | `Frameworks/OakTextView/src/OakDocumentView.mm` | — | Wraps OakTextView + status bar |
