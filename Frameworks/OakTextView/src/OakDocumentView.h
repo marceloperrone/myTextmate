@@ -11,6 +11,8 @@
 - (void)addAuxiliaryView:(NSView*)aView atEdge:(NSRectEdge)anEdge;
 - (void)removeAuxiliaryView:(NSView*)aView;
 
+- (void)showSymbolSelector:(NSPopUpButton*)symbolPopUp;
+
 - (void)showFindBar;
 - (void)showFindBarWithSelection;
 - (void)hideFindBar;

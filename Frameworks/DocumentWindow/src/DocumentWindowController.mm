@@ -120,6 +120,8 @@ bool is_disposable (OakDocument* doc)
 
 static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.path", @"arrayController.arrangedObjects.displayName", @"arrayController.arrangedObjects.documentEdited", @"selectedDocument.path", @"selectedDocument.displayName", @"selectedDocument.icon", @"selectedDocument.onDisk" , @"selectedDocument.documentEdited" ];
 
+static NSToolbarItemIdentifier const SymbolPopUpToolbarItemIdentifier = @"SymbolPopUp";
+
 // Methods declared in the class extension that are implemented in category files
 // (TouchBar, Session, WindowRouting) produce expected -Wincomplete-implementation
 // and -Wprotocol warnings. Suppress them for this @implementation block.
@@ -189,6 +191,8 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		for(NSString* keyPath in kObservedKeyPaths)
 			[self addObserver:self forKeyPath:keyPath options:NSKeyValueObservingOptionInitial context:nullptr];
 
+		[self.documentView.documentModel addObserver:self forKeyPath:@"symbolName" options:0 context:nullptr];
+
 		OakObserveUserDefaults(self);
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(applicationDidBecomeActiveNotification:) name:NSApplicationDidBecomeActiveNotification object:NSApp];
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(applicationDidResignActiveNotification:) name:NSApplicationDidResignActiveNotification object:NSApp];
@@ -202,6 +206,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	for(NSString* keyPath in kObservedKeyPaths)
 		[self removeObserver:self forKeyPath:keyPath];
 
+	[self.documentView.documentModel removeObserver:self forKeyPath:@"symbolName"];
 	[NSNotificationCenter.defaultCenter removeObserver:self];
 
 	self.window.delegate        = nil;
@@ -631,6 +636,13 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	{
 		[self reloadTabBarData];
 		[[self class] scheduleSessionBackup:self];
+	}
+
+	if([keyPath isEqualToString:@"symbolName"])
+	{
+		NSString* name = [self.documentView.documentModel valueForKey:@"symbolName"];
+		[self.symbolPopUp.menu removeAllItems];
+		[self.symbolPopUp addItemWithTitle:(name.length ? name : @"Symbols")];
 	}
 }
 
@@ -1607,12 +1619,12 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar
 {
-	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier, NSToolbarFlexibleSpaceItemIdentifier ];
+	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier, SymbolPopUpToolbarItemIdentifier, NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar
 {
-	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier ];
+	return @[ NSToolbarToggleSidebarItemIdentifier, NSToolbarSidebarTrackingSeparatorItemIdentifier, SymbolPopUpToolbarItemIdentifier ];
 }
 
 - (NSToolbarItem*)toolbar:(NSToolbar*)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag
@@ -1624,6 +1636,29 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		item.action = @selector(toggleFileBrowser:);
 		return item;
 	}
+	if([identifier isEqualToString:SymbolPopUpToolbarItemIdentifier])
+	{
+		NSPopUpButton* popup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+		popup.font = [NSFont systemFontOfSize:13];
+		popup.bordered = NO;
+		[popup addItemWithTitle:@"Symbols"];
+		[popup setAccessibilityLabel:@"Symbol"];
+
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(symbolPopUpWillPopUp:) name:NSPopUpButtonWillPopUpNotification object:popup];
+
+		self.symbolPopUp = popup;
+
+		NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+		item.view = popup;
+		item.minSize = NSMakeSize(120, 22);
+		item.maxSize = NSMakeSize(300, 22);
+		return item;
+	}
 	return nil;
+}
+
+- (void)symbolPopUpWillPopUp:(NSNotification*)notification
+{
+	[self.documentView showSymbolSelector:self.symbolPopUp];
 }
 @end

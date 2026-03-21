@@ -20,17 +20,6 @@ public struct StatusBarView: View {
 				grammarMenu
 					.frame(minWidth: 50, maxWidth: 225)
 
-				statusDivider
-
-				SymbolPopUpView(
-					model: model,
-					title: {
-						let name = model.documentModel?.symbolName ?? ""
-						return name.isEmpty ? "Symbols" : name
-					}()
-				)
-				.frame(minWidth: 50, maxWidth: .infinity)
-
 			}
 			.padding(.horizontal, 10)
 			.frame(height: 24)
@@ -89,54 +78,6 @@ public struct StatusBarView: View {
 			.fill(.separator)
 			.frame(width: 1, height: 15)
 			.padding(.horizontal, 4)
-	}
-}
-
-// MARK: - Symbol PopUp (NSViewRepresentable)
-
-struct SymbolPopUpView: NSViewRepresentable {
-	let model: StatusBarViewModel
-	let title: String
-
-	func makeNSView(context: Context) -> NSPopUpButton {
-		let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-		popup.font = NSFont.systemFont(ofSize: 11)
-		popup.isBordered = false
-		popup.setAccessibilityLabel("Symbol")
-		popup.addItem(withTitle: title)
-
-		NotificationCenter.default.addObserver(
-			context.coordinator,
-			selector: #selector(Coordinator.willPopUp(_:)),
-			name: NSPopUpButton.willPopUpNotification,
-			object: popup
-		)
-
-		return popup
-	}
-
-	func updateNSView(_ nsView: NSPopUpButton, context: Context) {
-		if nsView.titleOfSelectedItem != title {
-			nsView.menu?.removeAllItems()
-			nsView.addItem(withTitle: title)
-		}
-	}
-
-	func makeCoordinator() -> Coordinator {
-		Coordinator(model: model)
-	}
-
-	@MainActor class Coordinator: NSObject {
-		let model: StatusBarViewModel
-		init(model: StatusBarViewModel) { self.model = model }
-
-		@objc func willPopUp(_ notification: Notification) {
-			guard let popup = notification.object as? NSPopUpButton else { return }
-			let sel = NSSelectorFromString("showSymbolSelector:")
-			if let d = model.delegate, d.responds(to: sel) {
-				_ = d.perform(sel, with: popup)
-			}
-		}
 	}
 }
 

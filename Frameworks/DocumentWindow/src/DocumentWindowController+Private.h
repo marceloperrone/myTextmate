@@ -46,6 +46,7 @@ extern NSUInteger DisableSessionSavingCount;
 @property (nonatomic) id                          splitModel;
 @property (nonatomic) OakDocumentView*            documentView;
 @property (nonatomic) OakTextView*                textView;
+@property (nonatomic) NSPopUpButton*              symbolPopUp;
 
 @property (nonatomic) BOOL                        autoRevealFile;
 
