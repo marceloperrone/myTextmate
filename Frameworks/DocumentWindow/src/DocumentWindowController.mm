@@ -1,8 +1,5 @@
-#import "DocumentWindowController.h"
-#import "ProjectLayoutView.h"
+#import "DocumentWindowController+Private.h"
 #import "SelectGrammarViewController.h"
-#import <document/OakDocument.h>
-#import <document/OakDocumentController.h>
 #import <OakAppKit/NSAlert Additions.h>
 #import <OakAppKit/NSMenuItem Additions.h>
 #import <OakAppKit/OakAppKit.h>
@@ -18,10 +15,8 @@
 // DocumentSplitModel (SwiftUI) — forward-declare methods used via KVC/messaging on id
 @interface NSObject (DocumentSplitModelMethods)
 @end
-#import <OakFoundation/OakFoundation.h>
 #import <OakFoundation/NSString Additions.h>
 #import <Preferences/Keys.h>
-#import <OakTextView/OakDocumentView.h>
 // FileTreeModel (SwiftUI) — forward-declare methods used via KVC/messaging on id
 @interface NSObject (FileTreeModelMethods)
 - (void)setupViewWithState:(id)state;
@@ -31,8 +26,6 @@
 - (NSURL*)createFolder:(id)sender;
 @end
 #import <OakCommand/OakCommand.h>
-#import <OakSystem/application.h>
-#import <Find/Find.h>
 #import <BundlesManager/BundlesManager.h>
 #import <BundleEditor/BundleEditor.h>
 #import <file/path_info.h>
@@ -88,90 +81,53 @@ static void show_command_error (std::string const& message, oak::uuid_t const& u
 	}];
 }
 
-@interface DocumentWindowController () <NSWindowDelegate, NSToolbarDelegate, NSTouchBarDelegate, OakTextViewDelegate, OakUserDefaultsObserver, FindDelegate>
+// ==========================================
+// = tracking document controller instances =
+// ==========================================
+
+NSMutableDictionary<NSUUID*, DocumentWindowController*>* AllControllers ()
 {
-	NSMutableSet<NSUUID*>*                 _stickyDocumentIdentifiers;
-
-	std::vector<std::string>               _projectScopeAttributes;  // kSettingsScopeAttributesKey
-	std::vector<std::string>               _externalScopeAttributes; // attr.project.ninja
-
-	std::vector<std::string>               _documentScopeAttributes; // attr.os-version, attr.untitled / attr.rev-path + kSettingsScopeAttributesKey
+	static NSMutableDictionary* res = [NSMutableDictionary new];
+	return res;
 }
-@property (nonatomic) NSTitlebarAccessoryViewController* titlebarViewController;
-@property (nonatomic) ProjectLayoutView*          layoutView;
-@property (nonatomic) id                          tabBarModel;
-@property (nonatomic) id                          splitModel;
-@property (nonatomic) OakDocumentView*            documentView;
-@property (nonatomic) OakTextView*                textView;
 
-@property (nonatomic) BOOL                        autoRevealFile;
-
-@property (nonatomic) NSSegmentedControl*         previousNextTouchBarControl;
-
-@property (nonatomic) NSString*                   projectPath;
-
-@property (nonatomic) NSString*                   documentPath;
-
-@property (nonatomic) NSArray<Bundle*>*           bundlesAlreadySuggested;
-
-@property (nonatomic, readwrite) NSArray<OakDocument*>* documents;
-@property (nonatomic, readwrite) OakDocument*           selectedDocument;
-@property (nonatomic) NSArrayController*                arrayController;
-
-+ (void)scheduleSessionBackup:(id)sender;
-
-- (void)makeTextViewFirstResponder:(id)sender;
-
-- (void)fileBrowserModel:(id)model openURLs:(NSArray*)someURLs;
-- (void)fileBrowserModel:(id)model closeURL:(NSURL*)anURL;
-
-- (void)takeNewTabIndexFrom:(id)sender;   // used by newDocumentInTab:
-- (void)takeTabsToTearOffFrom:(id)sender; // used by moveDocumentToNewWindow:
-@end
-
-namespace
+NSArray<DocumentWindowController*>* SortedControllers ()
 {
-	// ==========================================
-	// = tracking document controller instances =
-	// ==========================================
-
-	static NSMutableDictionary<NSUUID*, DocumentWindowController*>* AllControllers ()
+	NSMutableArray* res = [NSMutableArray array];
+	for(NSNumber* flag in @[ @NO, @YES ])
 	{
-		static NSMutableDictionary* res = [NSMutableDictionary new];
-		return res;
-	}
-
-	static NSArray<DocumentWindowController*>* SortedControllers ()
-	{
-		NSMutableArray* res = [NSMutableArray array];
-		for(NSNumber* flag in @[ @NO, @YES ])
+		for(NSWindow* window in [NSApp orderedWindows])
 		{
-			for(NSWindow* window in [NSApp orderedWindows])
+			if([window isMiniaturized] == flag.boolValue && [window.delegate respondsToSelector:@selector(identifier)])
 			{
-				if([window isMiniaturized] == flag.boolValue && [window.delegate respondsToSelector:@selector(identifier)])
-				{
-					DocumentWindowController* delegate = (DocumentWindowController*)window.delegate;
-					if(id controller = AllControllers()[delegate.identifier])
-						[res addObject:controller];
-				}
+				DocumentWindowController* delegate = (DocumentWindowController*)window.delegate;
+				if(id controller = AllControllers()[delegate.identifier])
+					[res addObject:controller];
 			}
 		}
-		return res;
 	}
+	return res;
+}
 
-	// ======================
-	// = document_t helpers =
-	// ======================
+// ======================
+// = document_t helpers =
+// ======================
 
-	static bool is_disposable (OakDocument* doc)
-	{
-		return doc && !doc.isDocumentEdited && !doc.isOnDisk && !doc.path && doc.isLoaded && doc.isBufferEmpty;
-	}
+bool is_disposable (OakDocument* doc)
+{
+	return doc && !doc.isDocumentEdited && !doc.isOnDisk && !doc.path && doc.isLoaded && doc.isBufferEmpty;
 }
 
 static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.path", @"arrayController.arrangedObjects.displayName", @"arrayController.arrangedObjects.documentEdited", @"selectedDocument.path", @"selectedDocument.displayName", @"selectedDocument.icon", @"selectedDocument.onDisk" , @"selectedDocument.documentEdited" ];
 
+// Methods declared in the class extension that are implemented in category files
+// (TouchBar, Session, WindowRouting) produce expected -Wincomplete-implementation
+// and -Wprotocol warnings. Suppress them for this @implementation block.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincomplete-implementation"
+#pragma clang diagnostic ignored "-Wprotocol"
 @implementation DocumentWindowController
+#pragma clang diagnostic pop
 + (KVDB*)sharedProjectStateDB
 {
 	NSString* appSupport = [[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) objectAtIndex:0] stringByAppendingPathComponent:@"TextMate"];
@@ -747,6 +703,18 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.window.representedFilename = document.isOnDisk ? document.path : @"";
 	if([keyPath isEqualToString:@"selectedDocument.onDisk"] || [keyPath isEqualToString:@"selectedDocument.icon"])
 		[self.window standardWindowButton:NSWindowDocumentIconButton].image = document.isOnDisk ? document.icon : nil;
+
+	// Push document-level changes to DocumentModel
+	id documentModel = self.documentView.documentModel;
+	if([keyPath isEqualToString:@"selectedDocument.path"] || [keyPath isEqualToString:@"selectedDocument.displayName"])
+	{
+		[documentModel setValue:document.path ?: @"" forKey:@"path"];
+		[documentModel setValue:document.displayName ?: @"" forKey:@"displayName"];
+	}
+	if([keyPath isEqualToString:@"selectedDocument.documentEdited"])
+		[documentModel setValue:@(document.isDocumentEdited) forKey:@"isDocumentEdited"];
+	if([keyPath isEqualToString:@"selectedDocument.onDisk"])
+		[documentModel setValue:@(document.isOnDisk) forKey:@"isOnDisk"];
 
 	if([keyPath hasSuffix:@"arrangedObjects.path"] || [keyPath hasSuffix:@"arrangedObjects.displayName"] || [keyPath hasSuffix:@"arrangedObjects.documentEdited"])
 	{
@@ -1408,6 +1376,15 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.projectPath = projectPath;
 
 		self.documentView.document = _selectedDocument;
+
+		// Push document-level state to DocumentModel
+		id documentModel = self.documentView.documentModel;
+		[documentModel setValue:newDocument.path ?: @"" forKey:@"path"];
+		[documentModel setValue:newDocument.displayName ?: @"" forKey:@"displayName"];
+		[documentModel setValue:newDocument.identifier.UUIDString ?: @"" forKey:@"identifier"];
+		[documentModel setValue:@(newDocument.isDocumentEdited) forKey:@"isDocumentEdited"];
+		[documentModel setValue:@(newDocument.isOnDisk) forKey:@"isOnDisk"];
+
 		[[self class] scheduleSessionBackup:self];
 	}
 	else
@@ -2051,374 +2028,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	return active;
 }
 
-// =============
-// = Touch Bar =
-// =============
-
-static NSTouchBarItemIdentifier kTouchBarCustomizationIdentifier = @"com.wonky.works.myTextMate.touch-bar.customization-identifier";
-static NSTouchBarItemIdentifier kTouchBarTabNavigationIdentifier = @"com.wonky.works.myTextMate.touch-bar.tab-navigation";
-static NSTouchBarItemIdentifier kTouchBarNewTabItemIdentifier    = @"com.wonky.works.myTextMate.touch-bar.new-tab";
-
-static NSTouchBarItemIdentifier kTouchBarFindItemIdentifier      = @"com.wonky.works.myTextMate.touch-bar.find";
-static NSTouchBarItemIdentifier kTouchBarFavoritesItemIdentifier = @"com.wonky.works.myTextMate.touch-bar.favorites";
-
-- (NSTouchBar*)makeTouchBar
-{
-	NSTouchBar* bar = [[NSTouchBar alloc] init];
-	bar.delegate = self;
-	bar.defaultItemIdentifiers = @[
-		NSTouchBarItemIdentifierOtherItemsProxy,
-		kTouchBarTabNavigationIdentifier,
-		kTouchBarNewTabItemIdentifier,
-
-		NSTouchBarItemIdentifierFlexibleSpace,
-		kTouchBarFindItemIdentifier,
-		kTouchBarFavoritesItemIdentifier,
-	];
-	bar.customizationIdentifier = kTouchBarCustomizationIdentifier;
-	bar.customizationAllowedItemIdentifiers = @[
-		kTouchBarTabNavigationIdentifier,
-		kTouchBarNewTabItemIdentifier,
-
-		NSTouchBarItemIdentifierFlexibleSpace,
-		kTouchBarFindItemIdentifier,
-		kTouchBarFavoritesItemIdentifier,
-	];
-	return bar;
-}
-
-- (void)updateTouchBarButtons
-{
-	_previousNextTouchBarControl.enabled = _documents.count > 1;
-}
-
-- (NSTouchBarItem*)touchBar:(NSTouchBar*)touchBar makeItemForIdentifier:(NSTouchBarItemIdentifier)identifier
-{
-	NSCustomTouchBarItem* res;
-	if([identifier isEqualToString:kTouchBarTabNavigationIdentifier])
-	{
-		if(!_previousNextTouchBarControl)
-		{
-			_previousNextTouchBarControl = [NSSegmentedControl segmentedControlWithImages:@[ [NSImage imageNamed:NSImageNameTouchBarGoBackTemplate], [NSImage imageNamed:NSImageNameTouchBarGoForwardTemplate] ] trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(didClickPreviousNextTouchBarControl:)];
-			_previousNextTouchBarControl.segmentStyle = NSSegmentStyleSeparated;
-			_previousNextTouchBarControl.enabled      = _documents.count > 1;
-		}
-
-		res = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
-		res.view = _previousNextTouchBarControl;
-		res.customizationLabel = @"Back/Forward Tab";
-	}
-	else if([identifier isEqualToString:kTouchBarNewTabItemIdentifier])
-	{
-		NSImage* newTabImage = [NSImage imageNamed:@"TouchBarNewTabTemplate"];
-		newTabImage.accessibilityDescription = @"new tab";
-		res = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
-		res.view = [NSButton buttonWithImage:newTabImage target:self action:@selector(newDocumentInTab:)];
-		res.visibilityPriority = NSTouchBarItemPriorityNormal;
-		res.customizationLabel = @"New Tab";
-	}
-
-	else if([identifier isEqualToString:kTouchBarFindItemIdentifier])
-	{
-		NSButton* findInProjectButton = [NSButton buttonWithImage:[NSImage imageNamed:NSImageNameTouchBarSearchTemplate] target:self action:@selector(orderFrontFindPanel:)];
-		findInProjectButton.tag = FFSearchTargetProject;
-		res = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
-		res.view = findInProjectButton;
-		res.visibilityPriority = NSTouchBarItemPriorityNormal;
-		res.customizationLabel = @"Find";
-	}
-	else if([identifier isEqualToString:kTouchBarFavoritesItemIdentifier])
-	{
-		NSImage* favoritesProjectsImage = [NSImage imageNamed:NSImageNameTouchBarBookmarksTemplate];
-		favoritesProjectsImage.accessibilityDescription = @"favorite projects";
-		res = [[NSCustomTouchBarItem alloc] initWithIdentifier:identifier];
-		res.view = [NSButton buttonWithImage:favoritesProjectsImage target:nil action:@selector(openFavorites:)];
-		res.visibilityPriority = NSTouchBarItemPriorityNormal;
-		res.customizationLabel = @"Favorite Projects";
-	}
-	return res;
-}
-
-- (void)didClickPreviousNextTouchBarControl:(NSSegmentedControl*)control
-{
-	switch(control.selectedSegment)
-	{
-		case 0: [self selectPreviousTab:control]; break;
-		case 1: [self selectNextTab:control];     break;
-	}
-}
-
-// ======================
-// = Session Management =
-// ======================
-
-+ (void)initialize
-{
-	static dispatch_once_t onceToken = 0;
-	dispatch_once(&onceToken, ^{
-		for(NSString* notification in @[ NSWindowDidBecomeKeyNotification, NSWindowDidDeminiaturizeNotification, NSWindowDidExposeNotification, NSWindowDidMiniaturizeNotification, NSWindowDidMoveNotification, NSWindowDidResizeNotification, NSWindowWillCloseNotification ])
-			[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleSessionBackup:) name:notification object:nil];
-	});
-}
-
-+ (void)backupSessionFiredTimer:(NSTimer*)aTimer
-{
-	[self saveSessionIncludingUntitledDocuments:YES];
-}
-
-+ (void)scheduleSessionBackup:(id)sender
-{
-	static NSTimer* saveTimer;
-	[saveTimer invalidate];
-	saveTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(backupSessionFiredTimer:) userInfo:nil repeats:NO];
-}
-
-+ (NSString*)sessionPath
-{
-	static NSString* const res = [NSString stringWithCxxString:path::join(oak::application_t::support("Session"), "Info.plist")];
-	return res;
-}
-
-static NSUInteger DisableSessionSavingCount = 0;
-
-+ (void)disableSessionSave { ++DisableSessionSavingCount; }
-+ (void)enableSessionSave  { --DisableSessionSavingCount; }
-
-+ (BOOL)restoreSession
-{
-	BOOL res = NO;
-	++DisableSessionSavingCount;
-
-	NSWindow* keyWindow;
-
-	NSDictionary* session = [NSDictionary dictionaryWithContentsOfFile:[self sessionPath]];
-	for(NSDictionary* project in session[@"projects"])
-	{
-		DocumentWindowController* controller = [DocumentWindowController new];
-		[controller setupControllerForProject:project skipMissingFiles:NO];
-		if(controller.documents.count == 0)
-			continue;
-
-		if(NSString* windowFrame = project[@"windowFrame"])
-		{
-			if([windowFrame hasPrefix:@"{"]) // Legacy NSRect
-					[controller.window setFrame:NSRectFromString(windowFrame) display:NO];
-			else	[controller.window setFrameFromString:windowFrame];
-		}
-
-		if([project[@"miniaturized"] boolValue])
-		{
-			[controller.window miniaturize:nil];
-		}
-		else
-		{
-			if([project[@"fullScreen"] boolValue])
-				[controller.window toggleFullScreen:self];
-			else if([project[@"zoomed"] boolValue])
-				[controller.window zoom:self];
-
-			[controller.window orderFront:self];
-			keyWindow = controller.window;
-		}
-
-		res = YES;
-	}
-
-	[keyWindow makeKeyWindow];
-
-	--DisableSessionSavingCount;
-	return res;
-}
-
-- (void)setupControllerForProject:(NSDictionary*)project skipMissingFiles:(BOOL)skipMissing
-{
-	if(NSString* fileBrowserWidth = project[@"fileBrowserWidth"])
-		self.fileBrowserWidth = [fileBrowserWidth floatValue];
-	self.defaultProjectPath = project[@"projectPath"];
-	self.projectPath        = project[@"projectPath"];
-	self.fileBrowserHistory = project[@"archivedFileBrowserState"] ?: project[@"fileBrowserState"];
-	self.fileBrowserVisible = [project[@"fileBrowserVisible"] boolValue];
-
-	NSMutableArray<OakDocument*>* documents = [NSMutableArray array];
-	NSInteger selectedTabIndex = 0;
-
-	for(NSDictionary* info in project[@"documents"])
-	{
-		OakDocument* doc;
-		NSString* identifier = info[@"identifier"];
-		if(!identifier || !(doc = [OakDocument documentWithIdentifier:[[NSUUID alloc] initWithUUIDString:identifier]]))
-		{
-			NSString* path = info[@"path"];
-			if(path && skipMissing && access([path fileSystemRepresentation], F_OK) != 0)
-				continue;
-
-			doc = [OakDocumentController.sharedInstance documentWithPath:path];
-			if(NSString* fileType = info[@"fileType"])
-				doc.fileType = fileType;
-			if(NSString* displayName = info[@"displayName"])
-				doc.customName = displayName;
-			if([info[@"sticky"] boolValue])
-				[self setDocument:doc sticky:YES];
-		}
-
-		if(!doc.path) // Add untitled documents to LRU-list
-			[OakDocumentController.sharedInstance didTouchDocument:doc];
-
-		doc.recentTrackingDisabled = YES;
-		[documents addObject:doc];
-
-		if([info[@"selected"] boolValue])
-			selectedTabIndex = documents.count - 1;
-	}
-
-	if(documents.count == 0)
-		[documents addObject:[OakDocumentController.sharedInstance untitledDocument]];
-
-	self.documents        = documents;
-	self.selectedTabIndex = selectedTabIndex;
-
-	[self openAndSelectDocument:documents[selectedTabIndex] activate:YES];
-}
-
-- (NSDictionary*)sessionInfoIncludingUntitledDocuments:(BOOL)includeUntitled
-{
-	NSMutableDictionary* res = [NSMutableDictionary dictionary];
-
-	if(NSString* projectPath = self.defaultProjectPath)
-		res[@"projectPath"] = projectPath;
-	if(id history = self.fileBrowserHistory)
-		res[@"archivedFileBrowserState"] = history;
-
-	if(([self.window styleMask] & NSWindowStyleMaskFullScreen) == NSWindowStyleMaskFullScreen)
-		res[@"fullScreen"] = @YES;
-	else if(self.window.isZoomed)
-		res[@"zoomed"] = @YES;
-	else
-		res[@"windowFrame"] = [self.window stringWithSavedFrame];
-
-	res[@"miniaturized"]       = @([self.window isMiniaturized]);
-	res[@"fileBrowserVisible"] = @(self.fileBrowserVisible);
-	res[@"fileBrowserWidth"]   = @(self.fileBrowserWidth);
-
-	NSMutableArray* docs = [NSMutableArray array];
-	for(OakDocument* document in _documents)
-	{
-		if(!includeUntitled && (!document.path || !path::exists(to_s(document.path))))
-			continue;
-
-		NSMutableDictionary* doc = [NSMutableDictionary dictionary];
-		if(document.isDocumentEdited || !document.path)
-		{
-			doc[@"identifier"] = document.identifier.UUIDString;
-			if(document.isLoaded)
-				[document saveBackup:self];
-		}
-		if(document.path)
-			doc[@"path"] = document.path;
-		if(document.fileType) // TODO Only necessary when document.isBufferEmpty
-			doc[@"fileType"] = document.fileType;
-		if(document.displayName)
-			doc[@"displayName"] = document.displayName;
-		if([document isEqual:self.selectedDocument])
-			doc[@"selected"] = @YES;
-		if([self isDocumentSticky:document])
-			doc[@"sticky"] = @YES;
-		[docs addObject:doc];
-	}
-	res[@"documents"] = docs;
-	res[@"lastRecentlyUsed"] = [NSDate date];
-	return res;
-}
-
-+ (BOOL)saveSessionIncludingUntitledDocuments:(BOOL)includeUntitled
-{
-	if(DisableSessionSavingCount)
-		return NO;
-
-	NSArray* controllers = SortedControllers();
-	if(controllers.count == 1)
-	{
-		DocumentWindowController* controller = controllers.firstObject;
-		if(!controller.projectPath && !controller.fileBrowserVisible && controller.documents.count == 1 && is_disposable(controller.selectedDocument))
-			controllers = nil;
-	}
-
-	NSMutableArray* projects = [NSMutableArray array];
-	for(DocumentWindowController* controller in [controllers reverseObjectEnumerator])
-		[projects addObject:[controller sessionInfoIncludingUntitledDocuments:includeUntitled]];
-
-	NSDictionary* session = @{ @"projects": projects };
-	return [session writeToFile:[self sessionPath] atomically:YES];
-}
-
-// ==========
-// = Legacy =
-// ==========
-
-- (std::map<std::string, std::string>)variables
-{
-	std::map<std::string, std::string> res;
-	if(self.fileBrowser)
-	{
-		NSDictionary<NSString*, NSString*>* vars = [self.fileBrowser valueForKey:@"environmentVariables"];
-		for(NSString* key in vars)
-			res[to_s(key)] = to_s(vars[key]);
-	}
-
-	if(NSString* projectDir = self.projectPath)
-	{
-		res["TM_PROJECT_DIRECTORY"] = [projectDir fileSystemRepresentation];
-		res["TM_PROJECT_UUID"]      = to_s(self.identifier);
-	}
-
-	return res;
-}
-
-+ (instancetype)controllerForDocument:(OakDocument*)aDocument
-{
-	if(!aDocument)
-		return nil;
-
-	for(DocumentWindowController* delegate in SortedControllers())
-	{
-		if(delegate.fileBrowserVisible && aDocument.path && [aDocument.path hasPrefix:delegate.projectPath])
-			return delegate;
-
-		for(OakDocument* document in delegate.documents)
-		{
-			if([aDocument isEqual:document])
-				return delegate;
-		}
-	}
-	return nil;
-}
-
-- (void)bringToFront
-{
-	[self showWindow:nil];
-	if(NSApp.isActive)
-	{
-		// If we call ‘mate -w’ in quick succession there is a chance that we have a pending “re-activate the terminal app” when this code is executed, which will make ‘isActive’ return ‘YES’ but shortly after, our application will become inactive. For this reason, we monitor the NSApplicationDidResignActiveNotification for 200 ms and re-activate TextMate if we see the notification.
-
-		__weak __block id token = [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidResignActiveNotification object:NSApp queue:nil usingBlock:^(NSNotification*){
-			[NSNotificationCenter.defaultCenter removeObserver:token];
-			[NSApp activateIgnoringOtherApps:YES];
-		}];
-
-		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
-			[NSNotificationCenter.defaultCenter removeObserver:token];
-		});
-	}
-	else
-	{
-		__weak __block id token = [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidBecomeActiveNotification object:NSApp queue:nil usingBlock:^(NSNotification*){
-			// If our window is not on the active desktop but another one is, the system gives focus to the wrong window.
-			[self showWindow:nil];
-			[NSNotificationCenter.defaultCenter removeObserver:token];
-		}];
-		[NSApp activateIgnoringOtherApps:YES];
-	}
-}
 
 // MARK: - NSToolbarDelegate
 
@@ -2442,178 +2051,5 @@ static NSUInteger DisableSessionSavingCount = 0;
 		return item;
 	}
 	return nil;
-}
-@end
-
-@implementation OakDocumentController (OakDocumentWindowControllerCategory)
-- (DocumentWindowController*)findOrCreateController:(NSArray<OakDocument*>*)documents project:(NSUUID*)projectUUID
-{
-	ASSERT(documents.count);
-
-	// =========================================
-	// = Return requested window, if it exists =
-	// =========================================
-
-	if(projectUUID)
-	{
-		if(DocumentWindowController* res = AllControllers()[projectUUID])
-			return res;
-
-		if([projectUUID.UUIDString isEqualToString:@"00000000-0000-0000-0000-000000000000"])
-			return [DocumentWindowController new];
-	}
-
-	// =========================================
-	// = Find window with one of our documents =
-	// =========================================
-
-	NSSet<NSUUID*>* uuids = [NSSet setWithArray:[documents valueForKey:@"identifier"]];
-
-	for(DocumentWindowController* candidate in SortedControllers())
-	{
-		for(OakDocument* document in candidate.documents)
-		{
-			if([uuids containsObject:document.identifier])
-				return candidate;
-		}
-	}
-
-	// ================================================================
-	// = Find window with project folder closest to document’s parent =
-	// ================================================================
-
-	NSArray<OakDocument*>* documentsWithPath = [documents filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"path != NULL"]];
-	NSSet<NSString*>* parents = [NSSet setWithArray:[documentsWithPath valueForKeyPath:@"path.stringByDeletingLastPathComponent"]];
-
-	std::map<size_t, DocumentWindowController*> candidates;
-	for(DocumentWindowController* candidate in SortedControllers())
-	{
-		if(candidate.projectPath)
-		{
-			std::string const projectPath = to_s(candidate.projectPath);
-			for(NSString* parent in parents)
-			{
-				if(path::is_child(to_s(parent), projectPath))
-					candidates.emplace(parent.length - candidate.projectPath.length, candidate);
-			}
-		}
-	}
-
-	if(!candidates.empty())
-		return candidates.begin()->second;
-
-	// ==============================================
-	// = Use frontmost window if a “scratch” window =
-	// ==============================================
-
-	if(DocumentWindowController* candidate = [SortedControllers() firstObject])
-	{
-		if(!candidate.fileBrowserVisible && candidate.documents.count == 1 && is_disposable(candidate.selectedDocument))
-			return candidate;
-	}
-
-	// ===================================
-	// = Give up and create a new window =
-	// ===================================
-
-	DocumentWindowController* res = [DocumentWindowController new];
-
-	if(parents.count) // setup project folder for new window
-	{
-		NSArray* rankedParents = [parents.allObjects sortedArrayUsingComparator:^NSComparisonResult(NSString* lhs, NSString* rhs){
-			return lhs.length < rhs.length ? NSOrderedAscending : (lhs.length > rhs.length ? NSOrderedDescending : NSOrderedSame);
-		}];
-		res.defaultProjectPath = rankedParents.firstObject;
-	}
-
-	return res;
-}
-
-- (DocumentWindowController*)controllerWithDocuments:(NSArray<OakDocument*>*)documents project:(NSUUID*)projectUUID
-{
-	DocumentWindowController* controller = [self findOrCreateController:documents project:projectUUID];
-	BOOL hasDisposable = controller.disposableDocument ? YES : NO;
-	OakDocument* documentToSelect = controller.documents.count <= (hasDisposable ? 1 : 0) ? documents.firstObject : documents.lastObject;
-	[controller insertDocuments:documents atIndex:controller.selectedTabIndex + 1 selecting:documentToSelect andClosing:hasDisposable ? @[ controller.disposableDocument ] : nil];
-	return controller;
-}
-
-- (void)showDocument:(OakDocument*)aDocument andSelect:(text::range_t const&)range inProject:(NSUUID*)identifier bringToFront:(BOOL)bringToFront
-{
-	if(range != text::range_t::undefined)
-		aDocument.selection = to_ns(range);
-
-	DocumentWindowController* controller = [self controllerWithDocuments:@[ aDocument ] project:identifier];
-	if(bringToFront)
-		[controller bringToFront];
-	else if(![controller.window isVisible])
-		[controller.window orderWindow:NSWindowBelow relativeTo:[([NSApp keyWindow] ?: [NSApp mainWindow]) windowNumber]];
-	[controller openAndSelectDocument:aDocument activate:YES];
-}
-
-- (void)showDocuments:(NSArray<OakDocument*>*)someDocument
-{
-	if(someDocument.count == 0)
-		return;
-
-	NSUUID* projectUUID = nil;
-	if(NSEvent.modifierFlags & NSEventModifierFlagOption)
-		projectUUID = [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000000"];
-
-	DocumentWindowController* controller = [self controllerWithDocuments:someDocument project:projectUUID];
-	[controller bringToFront];
-	[controller openAndSelectDocument:controller.documents[controller.selectedTabIndex] activate:YES];
-
-	// If we launch TextMate with a document to open and there are also session to restore
-	// then the document window ends up behind all the other windows, despite being active
-	// and the last window ordered front. Problem only seen on MAC_OS_X_VERSION_10_11.
-	// Running the next line somehow fixes the issue.
-	[NSApp orderedWindows];
-}
-
-- (void)showFileBrowserAtPath:(NSString*)aPath
-{
-	NSString* const folder = to_ns(path::resolve(to_s(aPath)));
-	[NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:[NSURL fileURLWithPath:folder]];
-
-	for(DocumentWindowController* candidate in SortedControllers())
-	{
-		if([folder isEqualToString:candidate.projectPath ?: candidate.defaultProjectPath])
-			return [candidate bringToFront];
-	}
-
-	DocumentWindowController* controller = nil;
-	for(DocumentWindowController* candidate in SortedControllers())
-	{
-		if(!candidate.fileBrowserVisible && candidate.documents.count == 1 && is_disposable(candidate.selectedDocument))
-		{
-			controller = candidate;
-			break;
-		}
-	}
-
-	if(!controller)
-		controller = [DocumentWindowController new];
-	else if(controller.selectedDocument)
-		controller.selectedDocument.customName = @"not untitled"; // release potential untitled token used
-
-	NSDictionary* project;
-	if(![NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsDisableFolderStateRestore])
-		project = [[DocumentWindowController sharedProjectStateDB] valueForKey:folder];
-
-	if(project && [project[@"documents"] count])
-	{
-		[controller setupControllerForProject:project skipMissingFiles:YES];
-	}
-	else
-	{
-		controller.defaultProjectPath = folder;
-		controller.fileBrowserVisible = YES;
-		controller.documents          = @[ [OakDocumentController.sharedInstance untitledDocument] ];
-
-		[controller.fileBrowser goToURL:[NSURL fileURLWithPath:folder]];
-		[controller openAndSelectDocument:controller.documents[controller.selectedTabIndex] activate:YES];
-	}
-	[controller bringToFront];
 }
 @end

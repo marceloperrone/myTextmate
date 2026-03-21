@@ -1,7 +1,6 @@
 #import "Find.h"
 #import "FFResultNode.h"
 #import "FFResultsViewController.h"
-#import "FFTextFieldViewController.h"
 #import "FFDocumentSearch.h"
 #import "CommonAncestor.h"
 #import "FFFolderMenu.h"
@@ -14,7 +13,7 @@
 #import <OakAppKit/NSMenuItem Additions.h>
 #import <OakAppKit/OakAppKit.h>
 #import <OakAppKit/OakPasteboard.h>
-#import <OakAppKit/OakTransitionViewController.h>
+#import <OakAppKit/OakPasteboardSelector.h>
 #import <OakAppKit/OakUIConstructionFunctions.h>
 #import <MenuBuilder/MenuBuilder.h>
 #import <Preferences/Keys.h>
@@ -60,38 +59,25 @@ enum FindActionTag
 }
 @end
 
+// ==============================
+// = FindPanelModel Interop     =
+// ==============================
+
+@interface NSObject (FindPanelModelMethods)
+- (NSView*)hostingView;
+@end
+
 // ========================
 // = FindWindowController =
 // ========================
 
-static NSButton* OakCreateHistoryButton (NSString* toolTip)
-{
-	NSButton* res = [[NSButton alloc] initWithFrame:NSZeroRect];
-	res.bezelStyle = NSBezelStyleRoundedDisclosure;
-	res.buttonType = NSButtonTypeMomentaryLight;
-	res.title      = @"";
-	res.toolTip    = toolTip;
-	res.accessibilityLabel = toolTip;
-	[res setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
-	return res;
-}
-
 @interface Find () <OakFindServerProtocol, OakUserDefaultsObserver, NSWindowDelegate, NSMenuDelegate>
 {
-	NSObjectController*        _objectController;
-
-	FFTextFieldViewController*   _findTextFieldViewController;
-	FFTextFieldViewController*   _replaceTextFieldViewController;
+	id                           _findPanelModel;
 
 	NSPopUpButton*               _wherePopUpButton;
-	NSButton*                    _findAllButton;
-	NSButton*                    _findNextButton;
-
-	OakTransitionViewController* _transitionViewController;
 
 	FFStatusBarViewController*   _statusBarViewController;
-	NSGridView*                  _gridView;
-	NSStackView*                 _actionButtonsStackView;
 }
 @property (nonatomic, readonly)           FFResultsViewController* resultsViewController;
 @property (nonatomic) BOOL                showsResultsOutlineView;
@@ -163,14 +149,13 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 {
 	if(self = [super initWithWindowNibName:@"UNUSED"])
 	{
-		_objectController = [[NSObjectController alloc] initWithContent:self];
 		_projectFolder    = NSHomeDirectory();
 
 		self.globHistoryList = [[OakHistoryList alloc] initWithName:@"Find in Folder Globs.default" stackSize:10 fallbackUserDefaultsKey:kUserDefaultsDefaultFindGlobsKey];
 		self.recentFolders   = [[OakHistoryList alloc] initWithName:@"findRecentPlaces" stackSize:21];
 
-		_findTextFieldViewController    = [[FFTextFieldViewController alloc] initWithPasteboard:OakPasteboard.findPasteboard grammarName:@"source.regexp.oniguruma"];
-		_replaceTextFieldViewController = [[FFTextFieldViewController alloc] initWithPasteboard:OakPasteboard.replacePasteboard grammarName:@"textmate.format-string"];
+		_findPanelModel = [[NSClassFromString(@"FindPanelModel") alloc] init];
+		[_findPanelModel setValue:self forKey:@"target"];
 	}
 	return self;
 }
@@ -191,148 +176,18 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		_resultsViewController.doubleClickResultAction = @selector(didDoubleClickResult:);
 		_resultsViewController.target                  = self;
 
-		[_resultsViewController bind:@"replaceString"           toObject:_replaceTextFieldViewController withKeyPath:@"stringValue" options:nil];
-		[_resultsViewController bind:@"showReplacementPreviews" toObject:_replaceTextFieldViewController withKeyPath:@"hasFocus"    options:nil];
-
-		_transitionViewController = [[OakTransitionViewController alloc] init];
-
 		_statusBarViewController = [[FFStatusBarViewController alloc] init];
 		_statusBarViewController.stopAction = @selector(stopSearch:);
 		_statusBarViewController.stopTarget = self;
 
-		NSDictionary* views = @{
-			@"options": self.gridView,
-			@"results": _transitionViewController.view,
-			@"status":  _statusBarViewController.view,
-			@"buttons": self.actionButtonsStackView,
-		};
-
-		NSView* contentView = [[NSView alloc] initWithFrame:NSZeroRect];
-
-		OakAddAutoLayoutViewsToSuperview(views.allValues, contentView);
-		OakSetupKeyViewLoop(@[ self.gridView, _transitionViewController.view, self.actionButtonsStackView ]);
-
-		[NSLayoutConstraint activateConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[options]|"                               options:0                                                            metrics:nil views:views]];
-		[NSLayoutConstraint activateConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[options]-[results]-[status]-[buttons]-|" options:NSLayoutFormatAlignAllLeading|NSLayoutFormatAlignAllTrailing metrics:nil views:views]];
-
-		window.contentView = contentView;
-		window.initialFirstResponder = _findTextFieldViewController.view;
-		window.defaultButtonCell = _findNextButton.cell;
-
-		// setup find/replace strings/options
-		[self userDefaultsDidChange:nil];
-		[self findClipboardDidChange:nil];
-		[self replaceClipboardDidChange:nil];
-
-		OakObserveUserDefaults(self);
-		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(findClipboardDidChange:) name:OakPasteboardDidChangeNotification object:OakPasteboard.findPasteboard];
-		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(replaceClipboardDidChange:) name:OakPasteboardDidChangeNotification object:OakPasteboard.replacePasteboard];
-		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(textViewWillPerformFindOperation:) name:@"OakTextViewWillPerformFindOperation" object:nil];
-
-		[window layoutIfNeeded]; // Incase autosaved window frame includes results, we want to shrink the frame
-		self.window = window;
-		[self updateWindowTitle];
-	}
-}
-
-- (void)menuNeedsUpdate:(NSMenu*)aMenu
-{
-	[aMenu removeAllItems];
-	[NSApp sendAction:@selector(updateShowTabMenu:) to:nil from:aMenu];
-}
-
-- (NSGridView*)gridView
-{
-	if(!_gridView)
-	{
-		NSTextField* findLabel              = OakCreateLabel(@"Find:");
-		NSButton* findHistoryButton         = OakCreateHistoryButton(@"Show Find History");
-
-		NSButton* countButton               = OakCreateButton(@"Σ", NSBezelStyleSmallSquare);
-		countButton.toolTip                 = @"Show Results Count";
-		countButton.accessibilityLabel      = countButton.toolTip;
-
-		NSTextField* replaceLabel           = OakCreateLabel(@"Replace:");
-		NSButton* replaceHistoryButton      = OakCreateHistoryButton(@"Show Replace History");
-
-		NSTextField* optionsLabel           = OakCreateLabel(@"Options:");
-
-		NSButton* ignoreCaseCheckBox        = OakCreateCheckBox(@"Ignore Case");
-		NSButton* ignoreWhitespaceCheckBox  = OakCreateCheckBox(@"Ignore Whitespace");
-		NSButton* regularExpressionCheckBox = OakCreateCheckBox(@"Regular Expression");
-		NSButton* wrapAroundCheckBox        = OakCreateCheckBox(@"Wrap Around");
-
-		NSTextField* whereLabel             = OakCreateLabel(@"In:");
-		_wherePopUpButton                   = OakCreatePopUpButton(NO, nil, whereLabel);
-		NSTextField* matchingLabel          = OakCreateLabel(@"matching");
-		NSComboBox* globTextField           = OakCreateComboBox(matchingLabel);
-		NSPopUpButton* actionsPopUpButton   = OakCreateActionPopUpButton(YES /* bordered */);
-
-		NSGridView* optionsGridView = [NSGridView gridViewWithViews:@[
-			@[ regularExpressionCheckBox, ignoreWhitespaceCheckBox ],
-			@[ ignoreCaseCheckBox,        wrapAroundCheckBox       ],
-		]];
-
-		optionsGridView.rowSpacing    = 8;
-		optionsGridView.columnSpacing = 20;
-		optionsGridView.rowAlignment  = NSGridRowAlignmentFirstBaseline;
-		[optionsGridView rowAtIndex:1].bottomPadding = 12;
-
-		NSStackView* whereStackView = [NSStackView stackViewWithViews:@[
-			_wherePopUpButton, matchingLabel, globTextField
-		]];
-		whereStackView.alignment = NSLayoutAttributeLastBaseline;
-		[whereStackView setHuggingPriority:NSLayoutPriorityDefaultHigh-1 forOrientation:NSLayoutConstraintOrientationVertical];
-
-		_gridView = [NSGridView gridViewWithViews:@[
-			@[ findLabel,    _findTextFieldViewController.view,    findHistoryButton,   countButton ],
-			@[ replaceLabel, _replaceTextFieldViewController.view, replaceHistoryButton             ],
-			@[ optionsLabel, optionsGridView                                                        ],
-			@[ whereLabel,   whereStackView,                       actionsPopUpButton               ],
-		]];
-
-		_gridView.rowSpacing    = 8;
-		_gridView.columnSpacing = 4;
-		_gridView.yPlacement    = NSGridCellPlacementTop;
-
-		[_gridView rowAtIndex:0].topPadding        = 20;
-		[_gridView columnAtIndex:0].xPlacement     = NSGridCellPlacementTrailing;
-		[_gridView columnAtIndex:0].leadingPadding = 20;
-		[_gridView columnAtIndex:1].leadingPadding = 4;
-		[_gridView columnAtIndex:3].leadingPadding = 4;
-		[_gridView columnAtIndex:_gridView.numberOfColumns-1].trailingPadding = 20;
-
-		[_gridView mergeCellsInHorizontalRange:NSMakeRange(2, 2) verticalRange:NSMakeRange(3, 1)];
-		[_gridView cellAtColumnIndex:2 rowIndex:3].xPlacement = NSGridCellPlacementFill;
-
-		for(NSUInteger row = 0; row < _gridView.numberOfRows; ++row)
-			[_gridView cellAtColumnIndex:0 rowIndex:row].yPlacement = NSGridCellPlacementNone;
-
-		for(NSUInteger row = 0; row < 2; ++row)
-		{
-			[_gridView cellAtColumnIndex:0 rowIndex:row].rowAlignment = NSGridRowAlignmentFirstBaseline;
-			[_gridView cellAtColumnIndex:1 rowIndex:row].rowAlignment = NSGridRowAlignmentFirstBaseline;
-		}
-
-		[_gridView cellAtColumnIndex:0 rowIndex:2].customPlacementConstraints = @[ [optionsLabel.firstBaselineAnchor constraintEqualToAnchor:regularExpressionCheckBox.firstBaselineAnchor constant:0] ];
-		[_gridView cellAtColumnIndex:0 rowIndex:3].customPlacementConstraints = @[ [whereLabel.firstBaselineAnchor constraintEqualToAnchor:matchingLabel.firstBaselineAnchor constant:0] ];
-
-		[_gridView setContentHuggingPriority:NSLayoutPriorityWindowSizeStayPut forOrientation:NSLayoutConstraintOrientationVertical];
-
-		_findTextFieldViewController.view.accessibilityTitleUIElement    = findLabel;
-		_replaceTextFieldViewController.view.accessibilityTitleUIElement = replaceLabel;
-
-		[countButton.widthAnchor constraintEqualToAnchor:findHistoryButton.widthAnchor].active = YES;
-		[countButton.heightAnchor constraintEqualToAnchor:findHistoryButton.heightAnchor].active = YES;
+		// Wire the "Where" popup — create it here so Find.mm controls its menu
+		_wherePopUpButton = OakCreatePopUpButton(NO, nil, nil);
 		[_wherePopUpButton.widthAnchor constraintLessThanOrEqualToConstant:150].active = YES;
-
 		[self updateSearchInPopUpMenu];
 
-		// =============================
-		// = Create action pop-up menu =
-		// =============================
-
-		MBMenu const items = {
+		// Create action popup menu
+		NSPopUpButton* actionsPopUpButton = OakCreateActionPopUpButton(YES /* bordered */);
+		MBMenu const actionItems = {
 			{ /* Placeholder */ },
 			{ @"Search",                               @selector(nop:)                                    },
 			{ @"Binary Files",                         @selector(toggleSearchBinaryFiles:),   .indent = 1 },
@@ -352,70 +207,135 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 			{ @"Check All",                            @selector(checkAll:)                               },
 			{ @"Uncheck All",                          @selector(uncheckAll:)                             },
 		};
-
-		if(NSMenu* actionMenu = MBCreateMenu(items))
+		if(NSMenu* actionMenu = MBCreateMenu(actionItems))
 			actionsPopUpButton.menu = actionMenu;
 
-		// =============================
+		// Pass AppKit views to the SwiftUI model
+		[_findPanelModel setValue:_resultsViewController.view forKey:@"resultsView"];
+		[_findPanelModel setValue:_statusBarViewController.view forKey:@"statusBarView"];
+		[_findPanelModel setValue:_wherePopUpButton forKey:@"wherePopUpButton"];
+		[_findPanelModel setValue:actionsPopUpButton forKey:@"actionsPopUpButton"];
 
-		findHistoryButton.action    = @selector(showHistory:);
-		findHistoryButton.target    = _findTextFieldViewController;
-		replaceHistoryButton.action = @selector(showHistory:);
-		replaceHistoryButton.target = _replaceTextFieldViewController;
-		countButton.action          = @selector(countOccurrences:);
+		// Set the SwiftUI hosting view as the window content
+		window.contentView = [_findPanelModel hostingView];
 
-		[globTextField                        bind:NSValueBinding         toObject:_objectController            withKeyPath:@"content.globHistoryList.head" options:nil];
-		[globTextField                        bind:NSContentValuesBinding toObject:_objectController            withKeyPath:@"content.globHistoryList.list" options:nil];
-		[globTextField                        bind:NSEnabledBinding       toObject:_objectController            withKeyPath:@"content.canEditGlob"          options:nil];
-		[ignoreCaseCheckBox                   bind:NSValueBinding         toObject:_objectController            withKeyPath:@"content.ignoreCase"           options:nil];
-		[ignoreWhitespaceCheckBox             bind:NSValueBinding         toObject:_objectController            withKeyPath:@"content.ignoreWhitespace"     options:nil];
-		[regularExpressionCheckBox            bind:NSValueBinding         toObject:_objectController            withKeyPath:@"content.regularExpression"    options:nil];
-		[wrapAroundCheckBox                   bind:NSValueBinding         toObject:_objectController            withKeyPath:@"content.wrapAround"           options:nil];
-		[ignoreWhitespaceCheckBox             bind:NSEnabledBinding       toObject:_objectController            withKeyPath:@"content.canIgnoreWhitespace"  options:nil];
-		[countButton                          bind:NSEnabledBinding       toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"           options:nil];
+		// setup find/replace strings/options
+		[self userDefaultsDidChange:nil];
+		[self findClipboardDidChange:nil];
+		[self replaceClipboardDidChange:nil];
 
-		OakSetupKeyViewLoop(@[ _gridView, _findTextFieldViewController.view, _replaceTextFieldViewController.view, countButton, regularExpressionCheckBox, ignoreWhitespaceCheckBox, ignoreCaseCheckBox, wrapAroundCheckBox, _wherePopUpButton, globTextField, actionsPopUpButton ]);
+		OakObserveUserDefaults(self);
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(findClipboardDidChange:) name:OakPasteboardDidChangeNotification object:OakPasteboard.findPasteboard];
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(replaceClipboardDidChange:) name:OakPasteboardDidChangeNotification object:OakPasteboard.replacePasteboard];
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(textViewWillPerformFindOperation:) name:@"OakTextViewWillPerformFindOperation" object:nil];
+
+		[window layoutIfNeeded];
+		self.window = window;
+		[self updateWindowTitle];
 	}
-	return _gridView;
 }
 
-- (NSStackView*)actionButtonsStackView
+- (void)menuNeedsUpdate:(NSMenu*)aMenu
 {
-	if(!_actionButtonsStackView)
-	{
-		_findAllButton                 = OakCreateButton(@"Find All");
-		NSButton* replaceAllButton     = OakCreateButton(@"Replace All");
-		NSButton* replaceButton        = OakCreateButton(@"Replace");
-		NSButton* replaceAndFindButton = OakCreateButton(@"Replace & Find");
-		NSButton* findPreviousButton   = OakCreateButton(@"Previous");
-		_findNextButton                = OakCreateButton(@"Next");
-
-		_findAllButton.action          = @selector(findAll:);
-		replaceAllButton.action        = @selector(replaceAll:);
-		replaceButton.action           = @selector(replace:);
-		replaceAndFindButton.action    = @selector(replaceAndFind:);
-		findPreviousButton.action      = @selector(findPrevious:);
-		_findNextButton.action         = @selector(findNext:);
-
-		[replaceButton         bind:NSEnabledBinding toObject:_objectController            withKeyPath:@"content.canReplaceInDocument"  options:nil];
-		[replaceAndFindButton  bind:NSEnabledBinding toObject:_objectController            withKeyPath:@"content.canReplaceInDocument"  options:nil];
-		[replaceAndFindButton  bind:@"enabled2"      toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"            options:nil];
-		[_findAllButton        bind:NSEnabledBinding toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"            options:nil];
-		[replaceAllButton      bind:NSTitleBinding   toObject:_objectController            withKeyPath:@"content.replaceAllButtonTitle" options:nil];
-		[replaceAllButton      bind:NSEnabledBinding toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"            options:nil];
-		[replaceAllButton      bind:@"enabled2"      toObject:_objectController            withKeyPath:@"content.canReplaceAll"         options:nil];
-		[findPreviousButton    bind:NSEnabledBinding toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"            options:nil];
-		[_findNextButton       bind:NSEnabledBinding toObject:_findTextFieldViewController withKeyPath:@"stringValue.length"            options:nil];
-
-		_actionButtonsStackView = [NSStackView stackViewWithViews:@[ _findAllButton, replaceAllButton ]];
-		[_actionButtonsStackView setViews:@[ replaceButton, replaceAndFindButton, findPreviousButton, _findNextButton ] inGravity:NSStackViewGravityTrailing];
-		[_actionButtonsStackView setHuggingPriority:NSLayoutPriorityDefaultHigh-1 forOrientation:NSLayoutConstraintOrientationVertical];
-		_actionButtonsStackView.edgeInsets = { .left = 20, .right = 20 };
-
-		OakSetupKeyViewLoop(@[ _actionButtonsStackView, _findAllButton, replaceAllButton, replaceButton, replaceAndFindButton, findPreviousButton, _findNextButton ]);
-	}
-	return _actionButtonsStackView;
+	[aMenu removeAllItems];
+	[NSApp sendAction:@selector(updateShowTabMenu:) to:nil from:aMenu];
 }
+
+// ==============================
+// = Sync state to SwiftUI model =
+// ==============================
+
+- (void)syncOptionsToModel
+{
+	[_findPanelModel setValue:@(self.regularExpression) forKey:@"regularExpression"];
+	[_findPanelModel setValue:@(self.ignoreCase)        forKey:@"ignoreCase"];
+	[_findPanelModel setValue:@(self.wrapAround)        forKey:@"wrapAround"];
+	[_findPanelModel setValue:@(self.ignoreWhitespace)  forKey:@"ignoreWhitespace"];
+	[_findPanelModel setValue:@(self.fullWords)         forKey:@"fullWords"];
+	[_findPanelModel setValue:@(self.searchHiddenFolders) forKey:@"searchHiddenFolders"];
+	[_findPanelModel setValue:@(self.searchFolderLinks)   forKey:@"searchFolderLinks"];
+	[_findPanelModel setValue:@(self.searchFileLinks)     forKey:@"searchFileLinks"];
+	[_findPanelModel setValue:@(self.searchBinaryFiles)   forKey:@"searchBinaryFiles"];
+	[_findPanelModel setValue:@(self.canEditGlob)          forKey:@"canEditGlob"];
+	[_findPanelModel setValue:@(self.canReplaceInDocument)  forKey:@"canReplaceInDocument"];
+}
+
+- (void)syncMatchCountsToModel
+{
+	[_findPanelModel setValue:@(self.countOfMatches)                  forKey:@"countOfMatches"];
+	[_findPanelModel setValue:@(self.countOfExcludedMatches)          forKey:@"countOfExcludedMatches"];
+	[_findPanelModel setValue:@(self.countOfReadOnlyMatches)          forKey:@"countOfReadOnlyMatches"];
+	[_findPanelModel setValue:@(self.countOfExcludedReadOnlyMatches)  forKey:@"countOfExcludedReadOnlyMatches"];
+	[_findPanelModel setValue:@(self.canReplaceAll)                   forKey:@"canReplaceAll"];
+	[_findPanelModel setValue:self.replaceAllButtonTitle              forKey:@"replaceAllButtonTitle"];
+}
+
+// ====================================
+// = FindPanelModel delegate methods  =
+// ====================================
+
+- (void)findPanelDidChangeFindString:(id)sender
+{
+	// Model's findString changed — sync to pasteboard on commit
+}
+
+- (void)findPanelDidChangeReplaceString:(id)sender
+{
+	// Model's replaceString changed — update results preview
+	NSString* replaceString = [_findPanelModel valueForKey:@"replaceString"];
+	_resultsViewController.replaceString = replaceString;
+	_resultsViewController.showReplacementPreviews = (replaceString.length > 0);
+}
+
+- (void)findPanelDidChangeOptions:(id)sender
+{
+	// Read options back from model
+	self.regularExpression = [[_findPanelModel valueForKey:@"regularExpression"] boolValue];
+	self.ignoreCase        = [[_findPanelModel valueForKey:@"ignoreCase"] boolValue];
+	self.wrapAround        = [[_findPanelModel valueForKey:@"wrapAround"] boolValue];
+	self.ignoreWhitespace  = [[_findPanelModel valueForKey:@"ignoreWhitespace"] boolValue];
+	self.fullWords         = [[_findPanelModel valueForKey:@"fullWords"] boolValue];
+}
+
+- (void)findPanelDidChangeFolderOptions:(id)sender
+{
+	self.searchHiddenFolders = [[_findPanelModel valueForKey:@"searchHiddenFolders"] boolValue];
+	self.searchFolderLinks   = [[_findPanelModel valueForKey:@"searchFolderLinks"] boolValue];
+	self.searchFileLinks     = [[_findPanelModel valueForKey:@"searchFileLinks"] boolValue];
+	self.searchBinaryFiles   = [[_findPanelModel valueForKey:@"searchBinaryFiles"] boolValue];
+}
+
+- (void)findPanelDidChangeGlob:(id)sender
+{
+	NSString* glob = [_findPanelModel valueForKey:@"globString"];
+	if(glob)
+		[_globHistoryList addObject:glob];
+}
+
+- (void)findPanelFindAll:(id)sender        { [self performFindAction:FindActionFindAll];        }
+- (void)findPanelFindNext:(id)sender       { [self performFindAction:FindActionFindNext];       }
+- (void)findPanelFindPrevious:(id)sender   { [self performFindAction:FindActionFindPrevious];   }
+- (void)findPanelReplaceAll:(id)sender     { [self performFindAction:FindActionReplaceAll];     }
+- (void)findPanelReplace:(id)sender        { [self performFindAction:FindActionReplace];        }
+- (void)findPanelReplaceAndFind:(id)sender { [self performFindAction:FindActionReplaceAndFind]; }
+
+- (void)findPanelCountOccurrences:(id)sender { [self performFindAction:FindActionCountMatches]; }
+
+- (void)findPanelStopSearch:(id)sender { [self stopSearch:self]; }
+
+- (void)findPanelShowFindHistory:(id)sender
+{
+	if(!OakPasteboardSelector.sharedInstance.window.isVisible)
+		[OakPasteboard.findPasteboard selectItemForControl:[_findPanelModel hostingView]];
+}
+
+- (void)findPanelShowReplaceHistory:(id)sender
+{
+	if(!OakPasteboardSelector.sharedInstance.window.isVisible)
+		[OakPasteboard.replacePasteboard selectItemForControl:[_findPanelModel hostingView]];
+}
+
+// ==============================
 
 - (void)userDefaultsDidChange:(NSNotification*)aNotification
 {
@@ -427,38 +347,41 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	self.searchFolderLinks   = [[options objectForKey:@"searchFolderLinks"] boolValue];
 	self.searchFileLinks     = ![[options objectForKey:@"skipFileLinks"] boolValue];
 	self.searchBinaryFiles   = [[options objectForKey:@"searchBinaryFiles"] boolValue];
+
+	[self syncOptionsToModel];
 }
 
 - (void)findClipboardDidChange:(NSNotification*)aNotification
 {
 	OakPasteboardEntry* entry = OakPasteboard.findPasteboard.current;
-	_findTextFieldViewController.stringValue = entry.string;
+	[_findPanelModel setValue:entry.string forKey:@"findString"];
 	self.regularExpression = entry.regularExpression;
 	self.ignoreWhitespace  = entry.ignoreWhitespace;
 	self.fullWords         = entry.fullWordMatch;
+	[self syncOptionsToModel];
 }
 
 - (void)replaceClipboardDidChange:(NSNotification*)aNotification
 {
-	_replaceTextFieldViewController.stringValue = OakPasteboard.replacePasteboard.current.string;
+	[_findPanelModel setValue:OakPasteboard.replacePasteboard.current.string forKey:@"replaceString"];
 }
 
 - (NSString*)findString
 {
-	return _findTextFieldViewController.stringValue;
+	return [_findPanelModel valueForKey:@"findString"] ?: @"";
 }
 
 - (NSString*)replaceString
 {
-	return _replaceTextFieldViewController.stringValue ?: @"";
+	return [_findPanelModel valueForKey:@"replaceString"] ?: @"";
 }
 
 - (void)updateWindowTitle
 {
 	if(NSString* folder = self.searchFolder)
-		self.window.title = [NSString localizedStringWithFormat:@"Find — %@", [folder stringByAbbreviatingWithTildeInPath]];
+		self.window.title = [NSString localizedStringWithFormat:@"Find \u2014 %@", [folder stringByAbbreviatingWithTildeInPath]];
 	else if(_searchTarget == FFSearchTargetOpenFiles)
-		self.window.title = @"Find — Open Files";
+		self.window.title = @"Find \u2014 Open Files";
 	else
 		self.window.title = @"Find";
 }
@@ -472,18 +395,12 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 {
 	BOOL isVisibleAndKey = self.isVisible && self.window.isKeyWindow;
 	[super showWindow:sender];
-	if(!isVisibleAndKey || ![self.window.firstResponder isKindOfClass:[NSTextView class]])
-		[self.window makeFirstResponder:_findTextFieldViewController.view];
+	if(!isVisibleAndKey)
+		[self.window makeFirstResponder:[_findPanelModel hostingView]];
 }
 
 - (BOOL)commitEditing
 {
-	id currentResponder = [[self window] firstResponder];
-	id view = [currentResponder isKindOfClass:[NSTextView class]] ? [currentResponder delegate] : currentResponder;
-	BOOL res = [_objectController commitEditing];
-	if([[self window] firstResponder] != currentResponder && view)
-		[[self window] makeFirstResponder:view];
-
 	// =====================
 	// = Update Pasteboard =
 	// =====================
@@ -510,7 +427,12 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	if(self.replaceString && ![self.replaceString isEqualToString:OakPasteboard.findPasteboard.current.string])
 		[OakPasteboard.replacePasteboard addEntryWithString:self.replaceString];
 
-	return res;
+	// Sync glob from model
+	NSString* glob = [_findPanelModel valueForKey:@"globString"];
+	if(glob && ![glob isEqualToString:_globHistoryList.head])
+		[_globHistoryList addObject:glob];
+
+	return YES;
 }
 
 - (void)resultsFrameDidChange:(NSNotification*)aNotification
@@ -537,7 +459,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 }
 
 // ==============================
-// = Create “where” pop-up menu =
+// = Create "where" pop-up menu =
 // ==============================
 
 - (NSString*)displayNameForFolder:(NSString*)path
@@ -566,9 +488,9 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		{ @"Open Files",          @selector(orderFrontFindPanel:),        .tag = FFSearchTargetOpenFiles         },
 		{ @"Project Folder",      @selector(orderFrontFindPanel:),  @"F", .tag = FFSearchTargetProject           },
 		{ @"File Browser Items",  @selector(orderFrontFindPanel:),        .tag = FFSearchTargetFileBrowserItems  },
-		{ @"Other Folder…",       @selector(showFolderSelectionPanel:),   .tag = FFSearchTargetOther             },
+		{ @"Other Folder\u2026",  @selector(showFolderSelectionPanel:),   .tag = FFSearchTargetOther             },
 		{ /* -------- */ },
-		{ @"«Last Folder»",       @selector(orderFrontFindPanel:),        .ref = &folderItem                     },
+		{ @"\u00ABLast Folder\u00BB",       @selector(orderFrontFindPanel:),        .ref = &folderItem                     },
 		{ /* -------- */ },
 		{ @"Recent Places",       @selector(nop:),                                                               },
 	};
@@ -640,6 +562,9 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	self.canEditGlob          = _searchTarget != FFSearchTargetDocument && _searchTarget != FFSearchTargetSelection;
 	self.canReplaceInDocument = _searchTarget == FFSearchTargetDocument || _searchTarget == FFSearchTargetSelection;
 
+	[_findPanelModel setValue:@(self.canEditGlob) forKey:@"canEditGlob"];
+	[_findPanelModel setValue:@(self.canReplaceInDocument) forKey:@"canReplaceInDocument"];
+
 	[self updateSearchInPopUpMenu];
 	[self updateWindowTitle];
 
@@ -672,7 +597,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 
 	if(_showsResultsOutlineView = flag)
 	{
-		_resultsViewController.view.frame = { .size = NSMakeSize(NSWidth(_transitionViewController.view.frame), MAX(50, self.findResultsHeight)) };
+		_resultsViewController.view.frame = { .size = NSMakeSize(400, MAX(50, self.findResultsHeight)) };
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(resultsFrameDidChange:) name:NSViewFrameDidChangeNotification object:_resultsViewController.view];
 	}
 	else
@@ -680,18 +605,19 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		[NSNotificationCenter.defaultCenter removeObserver:self name:NSViewFrameDidChangeNotification object:_resultsViewController.view];
 	}
 
-	_transitionViewController.subview = flag ? _resultsViewController.view : nil;
-	self.window.defaultButtonCell = flag ? _findAllButton.cell : _findNextButton.cell;
+	[_findPanelModel setValue:@(flag) forKey:@"showResults"];
 }
 
 - (void)setStatusString:(NSString*)aString
 {
 	_statusBarViewController.statusText = aString;
+	[_findPanelModel setValue:aString forKey:@"statusText"];
 }
 
 - (void)setAlternateStatusString:(NSString*)aString
 {
 	_statusBarViewController.alternateStatusText = aString;
+	[_findPanelModel setValue:aString forKey:@"alternateStatusText"];
 }
 
 - (NSString*)searchFolder
@@ -728,19 +654,16 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		return;
 
 	_regularExpression = flag;
-	[_findTextFieldViewController showPopoverWithString:nil];
-
-	_findTextFieldViewController.syntaxHighlightEnabled    = flag;
-	_replaceTextFieldViewController.syntaxHighlightEnabled = flag;
+	[_findPanelModel setValue:@(flag) forKey:@"regularExpression"];
 }
 
-- (void)setIgnoreCase:(BOOL)flag        { if(_ignoreCase != flag) [NSUserDefaults.standardUserDefaults setObject:@(_ignoreCase = flag) forKey:kUserDefaultsFindIgnoreCase]; }
-- (void)setWrapAround:(BOOL)flag        { if(_wrapAround != flag) [NSUserDefaults.standardUserDefaults setObject:@(_wrapAround = flag) forKey:kUserDefaultsFindWrapAround]; }
+- (void)setIgnoreCase:(BOOL)flag        { if(_ignoreCase != flag) { [NSUserDefaults.standardUserDefaults setObject:@(_ignoreCase = flag) forKey:kUserDefaultsFindIgnoreCase]; [_findPanelModel setValue:@(_ignoreCase) forKey:@"ignoreCase"]; } }
+- (void)setWrapAround:(BOOL)flag        { if(_wrapAround != flag) { [NSUserDefaults.standardUserDefaults setObject:@(_wrapAround = flag) forKey:kUserDefaultsFindWrapAround]; [_findPanelModel setValue:@(_wrapAround) forKey:@"wrapAround"]; } }
 - (BOOL)ignoreWhitespace                { return _ignoreWhitespace && self.canIgnoreWhitespace; }
 - (BOOL)canIgnoreWhitespace             { return _regularExpression == NO; }
 
-- (NSString*)globString                 { [self commitEditing]; return _globHistoryList.head; }
-- (void)setGlobString:(NSString*)aGlob  { [_globHistoryList addObject:aGlob]; }
+- (NSString*)globString                 { return [_findPanelModel valueForKey:@"globString"] ?: _globHistoryList.head; }
+- (void)setGlobString:(NSString*)aGlob  { [_globHistoryList addObject:aGlob]; [_findPanelModel setValue:aGlob forKey:@"globString"]; }
 
 - (void)setProjectFolder:(NSString*)aFolder
 {
@@ -771,10 +694,10 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 - (void)setSearchFileLinks:(BOOL)flag     { if(_searchFileLinks != flag)     { _searchFileLinks     = flag; [self updateFolderSearchUserDefaults]; } }
 - (void)setSearchBinaryFiles:(BOOL)flag   { if(_searchBinaryFiles != flag)   { _searchBinaryFiles   = flag; [self updateFolderSearchUserDefaults]; } }
 
-- (IBAction)toggleSearchHiddenFolders:(id)sender { self.searchHiddenFolders = !self.searchHiddenFolders; }
-- (IBAction)toggleSearchFolderLinks:(id)sender   { self.searchFolderLinks   = !self.searchFolderLinks;   }
-- (IBAction)toggleSearchFileLinks:(id)sender     { self.searchFileLinks     = !self.searchFileLinks;     }
-- (IBAction)toggleSearchBinaryFiles:(id)sender   { self.searchBinaryFiles   = !self.searchBinaryFiles;   }
+- (IBAction)toggleSearchHiddenFolders:(id)sender { self.searchHiddenFolders = !self.searchHiddenFolders; [self syncOptionsToModel]; }
+- (IBAction)toggleSearchFolderLinks:(id)sender   { self.searchFolderLinks   = !self.searchFolderLinks;   [self syncOptionsToModel]; }
+- (IBAction)toggleSearchFileLinks:(id)sender     { self.searchFileLinks     = !self.searchFileLinks;     [self syncOptionsToModel]; }
+- (IBAction)toggleSearchBinaryFiles:(id)sender   { self.searchBinaryFiles   = !self.searchBinaryFiles;   [self syncOptionsToModel]; }
 
 - (IBAction)takeLevelToFoldFrom:(id)sender       { [_resultsViewController toggleCollapsedState:sender];                    }
 - (IBAction)selectNextResult:(id)sender          { [_resultsViewController selectNextResultWrapAround:self.wrapAround];     }
@@ -868,12 +791,14 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 
 - (void)performFindAction:(FindActionTag)action
 {
+	[self commitEditing];
+
 	if(self.regularExpression)
 	{
 		std::string error = regexp::validate(to_s(self.findString));
 		if(error != NULL_STR)
 		{
-			[_findTextFieldViewController showPopoverWithString:to_ns(text::format("Invalid regular expression: %s.", error.c_str()))];
+			self.statusString = to_ns(text::format("Invalid regular expression: %s.", error.c_str()));
 			return;
 		}
 	}
@@ -898,6 +823,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 						self.documentSearch = nil;
 						self.showsResultsOutlineView = YES;
 						_resultsViewController.hideCheckBoxes = YES;
+						[_findPanelModel setValue:@YES forKey:@"hideCheckBoxes"];
 						[self acceptMatches:[document matchesForString:self.findString options:_findOptions]];
 						[self folderSearchDidFinish:nil];
 					}
@@ -907,6 +833,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 					self.documentSearch = nil;
 					self.showsResultsOutlineView = YES;
 					_resultsViewController.hideCheckBoxes = NO;
+					[_findPanelModel setValue:@NO forKey:@"hideCheckBoxes"];
 					for(OakDocument* document in [OakDocumentController.sharedInstance openDocuments])
 						[self acceptMatches:[document matchesForString:self.findString options:_findOptions]];
 					[self folderSearchDidFinish:nil];
@@ -976,8 +903,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 							}
 
 							[doc saveModalForWindow:self.window completionHandler:^(OakDocumentIOResult result, NSString* errorMessage, oak::uuid_t const& filterUUID){
-								// TODO Indicate failure when result != OakDocumentIOResultSuccess
-								if(!doc.isLoaded) // Ensure document is still closed
+								if(!doc.isLoaded)
 									doc.content = nil;
 							}];
 						}
@@ -988,6 +914,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 					}
 				}
 				self.statusString = [NSString stringWithFormat:@"%@ replacement%@ made across %@ file%@.", [NSNumberFormatter localizedStringFromNumber:@(replaceCount) numberStyle:NSNumberFormatterDecimalStyle], replaceCount == 1 ? @"" : @"s", [NSNumberFormatter localizedStringFromNumber:@(fileCount) numberStyle:NSNumberFormatterDecimalStyle], fileCount == 1 ? @"" : @"s"];
+				[self syncMatchCountsToModel];
 			}
 			break;
 
@@ -1018,8 +945,8 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 - (void)didFind:(NSUInteger)aNumber occurrencesOf:(NSString*)aFindString atPosition:(text::pos_t const&)aPosition wrapped:(BOOL)didWrap
 {
 	static std::string const formatStrings[4][3] = {
-		{ "No more occurrences of “${found}”.", "Found “${found}”${line:+ at line ${line}, column ${column}}.",               "${count} occurrences of “${found}”." },
-		{ "No more matches for “${found}”.",    "Found one match for “${found}”${line:+ at line ${line}, column ${column}}.", "${count} matches for “${found}”."    },
+		{ "No more occurrences of \"${found}\".", "Found \"${found}\"${line:+ at line ${line}, column ${column}}.",               "${count} occurrences of \"${found}\"." },
+		{ "No more matches for \"${found}\".",    "Found one match for \"${found}\"${line:+ at line ${line}, column ${column}}.", "${count} matches for \"${found}\"."    },
 	};
 
 	std::map<std::string, std::string> variables;
@@ -1042,8 +969,8 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 - (void)didReplace:(NSUInteger)aNumber occurrencesOf:(NSString*)aFindString with:(NSString*)aReplacementString
 {
 	static NSString* const formatStrings[2][3] = {
-		{ @"Nothing replaced (no occurrences of “%@”).", @"Replaced one occurrence of “%@”.", @"Replaced %2$@ occurrences of “%@”." },
-		{ @"Nothing replaced (no matches for “%@”).",    @"Replaced one match of “%@”.",      @"Replaced %2$@ matches of “%@”."     }
+		{ @"Nothing replaced (no occurrences of \u201C%@\u201D).", @"Replaced one occurrence of \u201C%@\u201D.", @"Replaced %2$@ occurrences of \u201C%@\u201D." },
+		{ @"Nothing replaced (no matches for \u201C%@\u201D).",    @"Replaced one match of \u201C%@\u201D.",      @"Replaced %2$@ matches of \u201C%@\u201D."     }
 	};
 	NSString* format = formatStrings[(_findOptions & find::regular_expression) ? 1 : 0][aNumber > 2 ? 2 : aNumber];
 	self.statusString = [NSString stringWithFormat:format, aFindString, [NSNumberFormatter localizedStringFromNumber:@(aNumber) numberStyle:NSNumberFormatterDecimalStyle]];
@@ -1069,8 +996,10 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 			ASSERTF(false, "Unknown find option tag %d\n", option);
 	}
 
+	[self syncOptionsToModel];
+
 	if([OakPasteboard.findPasteboard.current.string isEqualToString:self.findString])
-		[self commitEditing]; // update the options on the pasteboard immediately if the find string has not been changed
+		[self commitEditing];
 }
 
 // ====================
@@ -1089,8 +1018,8 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		[self unbind:@"countOfReadOnlyMatches"];
 		[self unbind:@"countOfExcludedReadOnlyMatches"];
 
-		// Update UI dependent on “count of matches”
 		self.countOfMatches = self.countOfExcludedMatches = self.countOfReadOnlyMatches = self.countOfExcludedReadOnlyMatches = 0;
+		[self syncMatchCountsToModel];
 	}
 
 	_resultsViewController.results = _results = [FFResultNode new];
@@ -1111,9 +1040,11 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	if(_documentSearch = newSearcher)
 	{
 		_statusBarViewController.progressIndicatorVisible = YES;
-		self.statusString            = @"Searching…";
+		[_findPanelModel setValue:@YES forKey:@"isSearching"];
+		self.statusString            = @"Searching\u2026";
 		self.showsResultsOutlineView = YES;
 		_resultsViewController.hideCheckBoxes = NO;
+		[_findPanelModel setValue:@NO forKey:@"hideCheckBoxes"];
 
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(folderSearchDidReceiveResults:) name:FFDocumentSearchDidReceiveResultsNotification object:_documentSearch];
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(folderSearchDidFinish:) name:FFDocumentSearchDidFinishNotification object:_documentSearch];
@@ -1158,6 +1089,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 {
 	self.performingFolderSearch = NO;
 	_statusBarViewController.progressIndicatorVisible = NO;
+	[_findPanelModel setValue:@NO forKey:@"isSearching"];
 	if(!_results)
 		return;
 
@@ -1167,13 +1099,14 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	[self bind:@"countOfExcludedReadOnlyMatches" toObject:_results withKeyPath:@"countOfExcludedReadOnly" options:nil];
 
 	[self setUpFindMatches:self];
+	[self syncMatchCountsToModel];
 
 	NSString* fmt;
 	switch(self.countOfMatches)
 	{
-		case 0:  fmt = @"No results found for “%@”.";     break;
-		case 1:  fmt = @"Found one result for “%@”.";     break;
-		default: fmt = @"Found %2$@ results for “%1$@”."; break;
+		case 0:  fmt = @"No results found for \u201C%@\u201D.";     break;
+		case 1:  fmt = @"Found one result for \u201C%@\u201D.";     break;
+		default: fmt = @"Found %2$@ results for \u201C%1$@\u201D."; break;
 	}
 
 	NSString* searchString = [_documentSearch searchString] ?: self.findString;
@@ -1209,7 +1142,6 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		std::string searchPath     = [newValue respondsToSelector:@selector(UTF8String)] ? [newValue UTF8String] : "";
 		std::string lastSearchPath = [oldValue respondsToSelector:@selector(UTF8String)] ? [oldValue UTF8String] : "";
 
-		// Show only the directory part unless the file name hasn’t changed since last poll of the scanner
 		if(searchPath != lastSearchPath && !path::is_directory(searchPath))
 			searchPath = path::parent(searchPath);
 
@@ -1217,7 +1149,7 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 		if(path::is_directory(searchPath))
 			relative += "/";
 
-		self.statusString = [NSString localizedStringWithFormat:@"Searching “%@”…", [NSString stringWithCxxString:relative]];
+		self.statusString = [NSString localizedStringWithFormat:@"Searching \u201C%@\u201D\u2026", [NSString stringWithCxxString:relative]];
 	}
 }
 
@@ -1265,9 +1197,9 @@ static NSButton* OakCreateHistoryButton (NSString* toolTip)
 	NSString* fmt;
 	switch(self.countOfMatches)
 	{
-		case 0:  fmt = @"No results for “%@”.";             break;
-		case 1:  fmt = @"Showing one result for “%@”.";     break;
-		default: fmt = @"Showing %2$@ results for “%1$@”."; break;
+		case 0:  fmt = @"No results for \u201C%@\u201D.";             break;
+		case 1:  fmt = @"Showing one result for \u201C%@\u201D.";     break;
+		default: fmt = @"Showing %2$@ results for \u201C%1$@\u201D."; break;
 	}
 	self.statusString = [NSString stringWithFormat:fmt, [_documentSearch searchString], [NSNumberFormatter localizedStringFromNumber:@(self.countOfMatches) numberStyle:NSNumberFormatterDecimalStyle]];
 }

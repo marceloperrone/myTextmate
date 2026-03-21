@@ -58,6 +58,7 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	NSMutableArray* bottomAuxiliaryViews;
 
 	NSObject* statusBarModel;
+	id _documentModel;
 	NSObject* findBarModel;
 	NSView* findBarView;
 
@@ -69,6 +70,8 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 @end
 
 @implementation OakDocumentView
+@synthesize documentModel = _documentModel;
+
 - (id)initWithFrame:(NSRect)aRect
 {
 	if(self = [super initWithFrame:aRect])
@@ -91,6 +94,8 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		[statusBarModel setValue:self forKey:@"delegate"];
 		[statusBarModel setValue:self forKey:@"target"];
 		_statusBar = [statusBarModel valueForKey:@"hostingView"];
+
+		_documentModel = [[NSClassFromString(@"DocumentModel") alloc] init];
 
 		OakAddAutoLayoutViewsToSuperview(@[ textScrollView, _statusBar ], self);
 		OakSetupKeyViewLoop(@[ self, _textView, _statusBar ]);
@@ -211,28 +216,38 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	{
 		NSString* str = [_textView valueForKey:@"selectionString"];
 		[statusBarModel setValue:str forKey:@"selectionString"];
+		[_documentModel setValue:str forKey:@"selectionString"];
 	}
 	else if([aKeyPath isEqualToString:@"symbol"])
 	{
 		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
+		[_documentModel setValue:_textView.symbol forKey:@"symbolName"];
 	}
 	else if([aKeyPath isEqualToString:@"fileType"])
 	{
 		NSString* fileType = self.document.fileType;
 		[statusBarModel setValue:fileType forKey:@"fileType"];
+		[_documentModel setValue:fileType forKey:@"fileType"];
 		for(auto const& item : bundles::query(bundles::kFieldGrammarScope, to_s(fileType)))
-			[statusBarModel setValue:[NSString stringWithCxxString:item->name()] forKey:@"grammarName"];
+		{
+			NSString* name = [NSString stringWithCxxString:item->name()];
+			[statusBarModel setValue:name forKey:@"grammarName"];
+			[_documentModel setValue:name forKey:@"grammarName"];
+		}
 	}
 	else if([aKeyPath isEqualToString:@"tabSize"])
 	{
 		[statusBarModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
+		[_documentModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
 	}
 	else if([aKeyPath isEqualToString:@"softTabs"])
 	{
 		[statusBarModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
+		[_documentModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
 	}
 	else if([aKeyPath isEqualToString:@"themeUUID"])
 	{
+		[_documentModel setValue:[_textView valueForKey:@"themeUUID"] forKey:@"themeUUID"];
 		[self updateStyle];
 	}
 }

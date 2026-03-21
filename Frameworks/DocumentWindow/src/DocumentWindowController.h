@@ -18,10 +18,6 @@
 @property (nonatomic) id                                         fileBrowserHistory;
 @property (nonatomic) CGFloat                                    fileBrowserWidth;
 
-+ (BOOL)restoreSession;
-+ (void)disableSessionSave;
-+ (void)enableSessionSave;
-+ (BOOL)saveSessionIncludingUntitledDocuments:(BOOL)includeUntitled;
 + (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender;
 
 - (void)showWindow:(id)sender;
@@ -79,6 +75,17 @@
 - (IBAction)goToFavorites:(id)sender;
 - (IBAction)orderFrontGoToFolder:(id)sender;
 
-// Used by AppController
+@end
+
+// Session management — implemented in DocumentWindowController+Session.mm
+@interface DocumentWindowController (Session)
++ (BOOL)restoreSession;
++ (void)disableSessionSave;
++ (void)enableSessionSave;
++ (BOOL)saveSessionIncludingUntitledDocuments:(BOOL)includeUntitled;
+@end
+
+// Window routing — implemented in OakDocumentController+DocumentWindow.mm
+@interface DocumentWindowController (WindowRouting)
 + (instancetype)controllerForDocument:(OakDocument*)aDocument;
 @end

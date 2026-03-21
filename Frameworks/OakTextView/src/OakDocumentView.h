@@ -6,6 +6,7 @@
 @interface OakDocumentView : NSView
 @property (nonatomic, readonly) OakTextView* textView;
 @property (nonatomic) OakDocument* document;
+@property (nonatomic, readonly) id documentModel;
 @property (nonatomic) BOOL hideStatusBar;
 - (void)addAuxiliaryView:(NSView*)aView atEdge:(NSRectEdge)anEdge;
 - (void)removeAuxiliaryView:(NSView*)aView;
