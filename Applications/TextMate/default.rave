@@ -30,7 +30,8 @@ target "${dirname}" {
 	copy  support/*          "SharedSupport"
 	copy  @TextMateQL        "Library/QuickLook"
 
-	sources src/*.{cc,mm}
+	sources src/*.{cc,mm,swift}
+	swift_bridging_header "${dir}/src/TextMate-Bridging-Header.h"
 	executable "MacOS/${target}"
 	frameworks Cocoa WebKit
 }

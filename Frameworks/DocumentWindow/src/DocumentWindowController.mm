@@ -375,71 +375,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 // = Close Methods =
 // =================
 
-+ (NSAlert*)saveAlertForDocuments:(NSArray<OakDocument*>*)someDocuments
-{
-	NSAlert* alert = [[NSAlert alloc] init];
-	[alert setAlertStyle:NSAlertStyleWarning];
-	if(someDocuments.count == 1)
-	{
-		OakDocument* document = someDocuments.firstObject;
-		[alert setMessageText:[NSString stringWithFormat:@"Do you want to save the changes you made in the document “%@”?", document.displayName]];
-		[alert setInformativeText:@"Your changes will be lost if you don’t save them."];
-		[alert addButtons:@"Save", @"Cancel", @"Don’t Save", nil];
-	}
-	else
-	{
-		NSString* body = @"";
-		for(OakDocument* document in someDocuments)
-			body = [body stringByAppendingFormat:@"• “%@”\n", document.displayName];
-		[alert setMessageText:@"Do you want to save documents with changes?"];
-		[alert setInformativeText:body];
-		[alert addButtons:@"Save All", @"Cancel", @"Don’t Save", nil];
-	}
-	return alert;
-}
-
-- (void)showCloseWarningUIForDocuments:(NSArray<OakDocument*>*)someDocuments completionHandler:(void(^)(BOOL canClose))callback
-{
-	if(someDocuments.count == 0)
-		return callback(YES);
-
-	if(someDocuments.count == 1)
-	{
-		OakDocument* doc = someDocuments.firstObject;
-		if(![doc isEqual:self.selectedDocument])
-		{
-			self.selectedTabIndex = [self.documents indexOfObject:doc];
-			[self openAndSelectDocument:doc activate:YES];
-		}
-	}
-
-	NSAlert* alert = [DocumentWindowController saveAlertForDocuments:someDocuments];
-	[alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode){
-		switch(returnCode)
-		{
-			case NSAlertFirstButtonReturn: /* "Save" */
-			{
-				[self saveDocumentsUsingEnumerator:[someDocuments objectEnumerator] completionHandler:^(OakDocumentIOResult result){
-					callback(result == OakDocumentIOResultSuccess);
-				}];
-			}
-			break;
-
-			case NSAlertSecondButtonReturn: /* "Cancel" */
-			{
-				callback(NO);
-			}
-			break;
-
-			case NSAlertThirdButtonReturn: /* "Don't Save" */
-			{
-				callback(YES);
-			}
-			break;
-		}
-	}];
-}
-
 - (void)closeTabsAtIndexes:(NSIndexSet*)anIndexSet askToSaveChanges:(BOOL)askToSaveFlag createDocumentIfEmpty:(BOOL)createIfEmptyFlag activate:(BOOL)activateFlag
 {
 	NSArray<OakDocument*>* documentsToClose = [_documents objectsAtIndexes:anIndexSet];
@@ -556,27 +491,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	if(self.treatAsProjectWindow)
 		[[DocumentWindowController sharedProjectStateDB] setValue:[self sessionInfoIncludingUntitledDocuments:NO] forKey:self.projectPath];
 }
-
-- (BOOL)windowShouldClose:(id)sender
-{
-	NSArray<OakDocument*>* documentsToSave = [_documents filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"isDocumentEdited == YES"]];
-	if(!documentsToSave.count)
-	{
-		[self saveProjectState];
-		return YES;
-	}
-
-	[self showCloseWarningUIForDocuments:documentsToSave completionHandler:^(BOOL canClose){
-		if(canClose)
-		{
-			[self saveProjectState];
-			[self.window close];
-		}
-	}];
-
-	return NO;
-}
-
 
 + (void)saveSessionAndDetachBackups
 {
@@ -1179,134 +1093,10 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	}
 }
 
-- (void)updateExternalAttributes
-{
-	struct attribute_rule_t { std::string attribute; path::glob_t glob; std::string group; };
-	static auto const rules = new std::vector<attribute_rule_t>
-	{
-		{ "attr.project.ninja",   "build.ninja",    "build"   },
-		{ "attr.project.make",    "Makefile",       "build"   },
-		{ "attr.project.xcode",   "*.xcodeproj",    "build"   },
-		{ "attr.project.rake",    "Rakefile",       "build"   },
-		{ "attr.project.ant",     "build.xml",      "build"   },
-		{ "attr.project.cmake",   "CMakeLists.txt", "build"   },
-		{ "attr.project.maven",   "pom.xml",        "build"   },
-		{ "attr.project.scons",   "SConstruct",     "build"   },
-		{ "attr.project.lein",    "project.clj",    "build"   },
-		{ "attr.project.cargo",   "Cargo.toml",     "build"   },
-		{ "attr.project.swift",   "Package.swift",  "build"   },
-		{ "attr.project.vagrant", "Vagrantfile",    NULL_STR  },
-		{ "attr.project.jekyll",  "_config.yml",    NULL_STR  },
-		{ "attr.project.rave",    "default.rave",   NULL_STR  },
-		{ "attr.test.rspec",      ".rspec",         "test"    },
-	};
-
-	_externalScopeAttributes.clear();
-	if(!self.selectedDocument && !_projectPath)
-		return;
-
-	std::string const projectDir   = to_s(_projectPath ?: NSHomeDirectory());
-	std::string const documentPath = self.selectedDocument.path ? to_s(self.selectedDocument.path) : path::join(projectDir, "dummy");
-
-	dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
-
-		std::vector<std::string> res;
-		std::set<std::string> groups;
-		std::string dir = documentPath;
-		do {
-
-			dir = path::parent(dir);
-			auto entries = path::entries(dir);
-
-			for(auto rule : *rules)
-			{
-				if(groups.find(rule.group) != groups.end())
-					continue;
-
-				for(auto entry : entries)
-				{
-					if(rule.glob.does_match(entry->d_name))
-					{
-						res.push_back(rule.attribute);
-						if(rule.group != NULL_STR)
-						{
-							groups.insert(rule.group);
-							break;
-						}
-					}
-				}
-			}
-
-		} while(path::is_child(dir, projectDir) && dir != projectDir);
-
-		dispatch_async(dispatch_get_main_queue(), ^{
-			std::string const currentProjectDir   = to_s(_projectPath ?: NSHomeDirectory());
-			std::string const currentDocumentPath = self.selectedDocument.path ? to_s(self.selectedDocument.path) : path::join(projectDir, "dummy");
-			if(projectDir == currentProjectDir && documentPath == currentDocumentPath)
-				_externalScopeAttributes = res;
-		});
-
-	});
-}
-
-- (void)setProjectPath:(NSString*)newProjectPath
-{
-	if(_projectPath != newProjectPath && ![_projectPath isEqualToString:newProjectPath])
-	{
-		_projectPath = newProjectPath;
-		_projectScopeAttributes.clear();
-
-		std::string const customAttributes = settings_for_path(NULL_STR, text::join(_projectScopeAttributes, " "), to_s(_projectPath)).get(kSettingsScopeAttributesKey, NULL_STR);
-		if(customAttributes != NULL_STR)
-			_projectScopeAttributes.push_back(customAttributes);
-
-		[self updateExternalAttributes];
-		[self updateWindowTitle];
-	}
-}
-
-- (void)setDocumentPath:(NSString*)newDocumentPath
-{
-	if(_documentPath != newDocumentPath && !([_documentPath isEqualToString:newDocumentPath]) || _documentScopeAttributes.empty())
-	{
-		_documentPath = newDocumentPath;
-		_documentScopeAttributes = text::split(file::path_attributes(to_s(_documentPath)), " ");
-
-		std::string docDirectory = _documentPath ? path::parent(to_s(_documentPath)) : to_s(self.projectPath);
-
-		if(self.selectedDocument)
-		{
-			std::string const customAttributes = settings_for_path(to_s(_documentPath), to_s(self.selectedDocument.fileType) + " " + text::join(_documentScopeAttributes, " "), docDirectory).get(kSettingsScopeAttributesKey, NULL_STR);
-			if(customAttributes != NULL_STR)
-				_documentScopeAttributes.push_back(customAttributes);
-		}
-
-		[self updateExternalAttributes];
-
-		if(self.autoRevealFile && self.selectedDocument.path && self.fileBrowserVisible)
-			[self revealFileInProject:self];
-	}
-}
-
 - (void)takeProjectPathFrom:(NSMenuItem*)aMenuItem
 {
 	if(NSString* path = [aMenuItem respondsToSelector:@selector(representedObject)] ? [aMenuItem representedObject] : nil)
 		self.projectPath = self.defaultProjectPath = path;
-}
-
-// ========================
-// = OakTextView Delegate =
-// ========================
-
-- (NSString*)scopeAttributes
-{
-	std::set<std::string> attributes;
-
-	attributes.insert(_documentScopeAttributes.begin(), _documentScopeAttributes.end());
-	attributes.insert(_projectScopeAttributes.begin(), _projectScopeAttributes.end());
-	attributes.insert(_externalScopeAttributes.begin(), _externalScopeAttributes.end());
-
-	return [NSString stringWithCxxString:text::join(attributes, " ")];
 }
 
 // ==============
@@ -1435,10 +1225,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	[self.tabBarModel reloadWithCount:count titles:titles paths:paths identifiers:identifiers editedFlags:editedFlags];
 }
 
-// ==============================
-// = TabBarModel Context Menu   =
-// ==============================
-
 - (NSIndexSet*)tryObtainIndexSetFrom:(id)sender
 {
 	id res = [sender respondsToSelector:@selector(representedObject)] ? [sender representedObject] : sender;
@@ -1492,58 +1278,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	}
 }
 
-- (NSMenu*)tabBarModel:(id)model menuForIndex:(NSNumber*)indexNumber
-{
-	NSInteger tabIndex = indexNumber.integerValue;
-	NSInteger total    = _documents.count;
-
-	NSMutableIndexSet* newTabAtTab   = tabIndex == -1 ? [NSMutableIndexSet indexSetWithIndex:total] : [NSMutableIndexSet indexSetWithIndex:tabIndex + 1];
-	NSMutableIndexSet* clickedTab    = tabIndex == -1 ? [NSMutableIndexSet indexSet] : [NSMutableIndexSet indexSetWithIndex:tabIndex];
-	NSMutableIndexSet* otherTabs     = tabIndex == -1 ? [NSMutableIndexSet indexSet] : [NSMutableIndexSet indexSetWithIndexesInRange:NSMakeRange(0, total)];
-	NSMutableIndexSet* rightSideTabs = tabIndex == -1 ? [NSMutableIndexSet indexSet] : [NSMutableIndexSet indexSetWithIndexesInRange:NSMakeRange(0, total)];
-	NSMutableIndexSet* leftSideTabs  = tabIndex == -1 ? [NSMutableIndexSet indexSet] : [NSMutableIndexSet indexSetWithIndexesInRange:NSMakeRange(0, tabIndex)];
-
-	if(tabIndex != -1)
-	{
-		[otherTabs removeIndex:tabIndex];
-		[rightSideTabs removeIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, tabIndex + 1)]];
-		// No need to modify leftSideTabs
-	}
-
-	for(NSUInteger i = 0; i < _documents.count; ++i)
-	{
-		if([self isDocumentSticky:_documents[i]])
-		{
-			[otherTabs removeIndex:i];
-			[rightSideTabs removeIndex:i];
-			[leftSideTabs removeIndex:i];
-		}
-	}
-
-	SEL closeSingleTabSelector = tabIndex == _selectedTabIndex ? @selector(performCloseTab:) : @selector(takeTabsToCloseFrom:);
-	MBMenu const items = {
-		{ @"New Tab",                  @selector(takeNewTabIndexFrom:),    .representedObject = newTabAtTab   },
-		{ @"Move Tab to New Window",   @selector(takeTabsToTearOffFrom:),  .representedObject = total > 1 ? clickedTab : [NSIndexSet indexSet] },
-		{ /* -------- */ },
-		{ @"Close Tab",                closeSingleTabSelector,                                                                           .representedObject = clickedTab    },
-		{ @"Close Other Tabs",         @selector(takeTabsToCloseFrom:),                                                                  .representedObject = otherTabs     },
-		{ @"Close Tabs to the Right",  @selector(takeTabsToCloseFrom:),                                                                  .representedObject = rightSideTabs },
-		{ @"Close Tabs to the Left",   @selector(takeTabsToCloseFrom:),    .modifierFlags = NSEventModifierFlagOption, .alternate = YES, .representedObject = leftSideTabs  },
-		{ /* -------- */ },
-		{ @"Sticky",                   @selector(toggleSticky:),           .representedObject = clickedTab    },
-	};
-
-	NSMenu* menu = MBCreateMenu(items);
-	for(NSMenuItem* item in menu.itemArray)
-	{
-		// In fullscreen mode the window’s delegate is ignored as a target for menu actions, therefore we have to manually set the target for these menu items (as a workaround for what I can only assume is an OS bug)
-
-		if(!item.target && item.action)
-			item.target = [NSApp targetForAction:item.action];
-	}
-	return menu;
-}
-
 // ============================
 // = TabBarModel Delegate     =
 // ============================
@@ -1576,56 +1310,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	if(anIndex < _documents.count)
 		[self closeTabsAtIndexes:[NSIndexSet indexSetWithIndex:anIndex] askToSaveChanges:YES createDocumentIfEmpty:YES activate:YES];
 }
-
-// ================
-// = Tab Dragging =
-// ================
-
-- (BOOL)performDropOfTabItem:(NSUUID*)tabItemUUID atIndex:(NSUInteger)droppedIndex operation:(NSDragOperation)operation
-{
-	OakDocument* srcDocument = [OakDocumentController.sharedInstance findDocumentWithIdentifier:tabItemUUID];
-	if(!srcDocument)
-		return NO;
-
-	[self insertDocuments:@[ srcDocument ] atIndex:droppedIndex selecting:self.selectedDocument andClosing:@[ srcDocument.identifier ]];
-
-	if(operation == NSDragOperationMove)
-	{
-		// Find the source window controller that owns this document and close its tab
-		for(DocumentWindowController* controller in SortedControllers())
-		{
-			if(controller == self)
-				continue;
-
-			NSUInteger dragIndex = [controller.documents indexOfObjectPassingTest:^BOOL(OakDocument* doc, NSUInteger idx, BOOL* stop){
-				return [doc.identifier isEqual:tabItemUUID];
-			}];
-
-			if(dragIndex != NSNotFound)
-			{
-				BOOL wasSelected = dragIndex == controller.selectedTabIndex;
-
-				if(controller.fileBrowserVisible || controller.documents.count > 1)
-						[controller closeTabsAtIndexes:[NSIndexSet indexSetWithIndex:dragIndex] askToSaveChanges:NO createDocumentIfEmpty:YES activate:YES];
-				else	[controller close];
-
-				if(wasSelected)
-				{
-					self.selectedTabIndex = [self.documents indexOfObject:srcDocument];
-					[self openAndSelectDocument:srcDocument activate:YES];
-				}
-
-				return YES;
-			}
-		}
-	}
-
-	return YES;
-}
-
-- (IBAction)selectNextTab:(id)sender            { self.selectedTabIndex = (_selectedTabIndex + 1) % _documents.count;                    [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
-- (IBAction)selectPreviousTab:(id)sender        { self.selectedTabIndex = (_selectedTabIndex + _documents.count - 1) % _documents.count; [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
-- (IBAction)takeSelectedTabIndexFrom:(id)sender { self.selectedTabIndex = [sender tag];                                                  [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
 
 // ==================
 // = OakFileBrowser =
@@ -1921,113 +1605,6 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	NSString* path = [NSString stringWithCxxString:path::join(documentDir, v[((it - v.begin()) + 1) % v.size()])];
 	[self openItems:@[ @{ @"path": path } ] closingOtherTabs:NO activate:YES];
 }
-
-// ==========================
-// = Show Tab Menu Delegate =
-// ==========================
-
-- (void)updateShowTabMenu:(NSMenu*)aMenu
-{
-	if(![self.window isKeyWindow])
-	{
-		[aMenu addItemWithTitle:@"No Tabs" action:@selector(nop:) keyEquivalent:@""];
-		return;
-	}
-
-	int i = 0;
-	for(OakDocument* document in _documents)
-	{
-		NSMenuItem* item = [aMenu addItemWithTitle:document.displayName action:@selector(takeSelectedTabIndexFrom:) keyEquivalent:i < 8 ? [NSString stringWithFormat:@"%c", '1' + i] : @""];
-		item.tag     = i;
-		item.toolTip = [document.path stringByAbbreviatingWithTildeInPath];
-		if(aMenu.propertiesToUpdate & NSMenuPropertyItemImage)
-		{
-			item.image = [document.icon copy];
-			item.image.size = NSMakeSize(16, 16);
-		}
-		if(i == _selectedTabIndex)
-			item.state = NSControlStateValueOn;
-		else if(document.isDocumentEdited)
-			item.modifiedState = YES;
-		++i;
-	}
-
-	if(i == 0)
-	{
-		[aMenu addItemWithTitle:@"No Tabs Open" action:@selector(nop:) keyEquivalent:@""];
-	}
-	else
-	{
-		[aMenu addItem:[NSMenuItem separatorItem]];
-
-		NSMenuItem* item = [aMenu addItemWithTitle:@"Last Tab" action:@selector(takeSelectedTabIndexFrom:) keyEquivalent:@"9"];
-		item.tag     = _documents.count-1;
-		item.toolTip = _documents.lastObject.displayName;
-	}
-}
-
-// ====================
-// = NSMenuValidation =
-// ====================
-
-- (BOOL)validateMenuItem:(NSMenuItem*)menuItem
-{
-	static std::set<SEL> const delegateToFileBrowser = {
-		@selector(newFolder:), @selector(goBack:), @selector(goForward:),
-		@selector(reload:), @selector(deselectAll:)
-	};
-
-	BOOL active = YES;
-	if([menuItem action] == @selector(toggleFileBrowser:))
-		[menuItem setTitle:self.fileBrowserVisible ? @"Hide File Browser" : @"Show File Browser"];
-	else if([menuItem action] == @selector(newDocumentInDirectory:))
-	{
-		NSURL* dirURL = [self.fileBrowser valueForKey:@"directoryURLForNewItems"];
-		active = self.fileBrowserVisible && dirURL;
-		[menuItem setDynamicTitle:active ? [NSString stringWithFormat:@"New File in “%@”", [NSFileManager.defaultManager displayNameAtPath:dirURL.path]] : @"New File"];
-	}
-	else if(delegateToFileBrowser.find([menuItem action]) != delegateToFileBrowser.end())
-		active = self.fileBrowserVisible && [self.fileBrowser validateMenuItem:menuItem];
-	else if([menuItem action] == @selector(moveDocumentToNewWindow:))
-		active = _documents.count > 1;
-	else if([menuItem action] == @selector(selectNextTab:) || [menuItem action] == @selector(selectPreviousTab:))
-		active = _documents.count > 1;
-	else if([menuItem action] == @selector(revealFileInProject:) || [menuItem action] == @selector(revealFileInProjectByExpandingAncestors:))
-	{
-		active = self.selectedDocument.path != nil;
-		[menuItem setDynamicTitle:active ? [NSString stringWithFormat:@"Select “%@”", self.selectedDocument.displayName] : @"Select Document"];
-	}
-	else if([menuItem action] == @selector(goToProjectFolder:))
-		active = self.projectPath != nil;
-	else if([menuItem action] == @selector(goToParentFolder:))
-		active = [self.window firstResponder] != self.textView;
-	else if([menuItem action] == @selector(moveFocus:))
-		[menuItem setTitle:self.window.firstResponder == self.textView ? @"Move Focus to File Browser" : @"Move Focus to Document"];
-	else if([menuItem action] == @selector(takeProjectPathFrom:))
-		[menuItem setState:[self.defaultProjectPath isEqualToString:[menuItem representedObject]] ? NSControlStateValueOn : NSControlStateValueOff];
-	else if([menuItem action] == @selector(performCloseOtherTabsXYZ:))
-		active = _documents.count > 1;
-	else if([menuItem action] == @selector(performCloseTabsToTheRight:))
-		active = _selectedTabIndex + 1 < _documents.count;
-	else if([menuItem action] == @selector(performCloseTabsToTheLeft:))
-		active = _selectedTabIndex > 0;
-	else if([menuItem action] == @selector(performBundleItemWithUUIDStringFrom:))
-		active = [_textView validateMenuItem:menuItem];
-
-	SEL tabBarActions[] = { @selector(performCloseTab:), @selector(takeNewTabIndexFrom::), @selector(takeTabsToCloseFrom:), @selector(takeTabsToTearOffFrom:), @selector(toggleSticky:) };
-	if(oak::contains(std::begin(tabBarActions), std::end(tabBarActions), [menuItem action]))
-	{
-		if(NSIndexSet* indexSet = [self tryObtainIndexSetFrom:menuItem])
-		{
-			active = [indexSet count] != 0;
-			if(active && [menuItem action] == @selector(toggleSticky:))
-				[menuItem setState:[self isDocumentSticky:_documents[indexSet.firstIndex]] ? NSControlStateValueOn : NSControlStateValueOff];
-		}
-	}
-
-	return active;
-}
-
 
 // MARK: - NSToolbarDelegate
 

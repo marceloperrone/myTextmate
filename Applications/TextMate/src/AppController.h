@@ -1,18 +1,6 @@
-@interface AppController : NSObject <NSMenuDelegate>
-{
-	NSMenu* bundlesMenu;
-	NSMenu* themesMenu;
-	NSMenu* spellingMenu;
-	NSMenu* wrapColumnMenu;
+#import <Cocoa/Cocoa.h>
 
-	struct
-	{
-		std::string filter_string;
-		BOOL key_equivalent;
-		BOOL all_scopes;
-		int search_type;
-	} bundleItemSearch;
-}
+@interface AppController : NSObject <NSApplicationDelegate, NSMenuDelegate>
 
 - (IBAction)orderFrontFindPanel:(id)sender;
 
@@ -38,4 +26,4 @@
 - (BOOL)validateThemeMenuItem:(NSMenuItem*)item;
 @end
 
-void OakOpenDocuments (NSArray* paths, BOOL treatFilePackageAsFolder = NO);
+void OakOpenDocuments (NSArray* paths, BOOL treatFilePackageAsFolder);

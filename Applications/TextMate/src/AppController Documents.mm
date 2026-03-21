@@ -42,21 +42,21 @@
 		for(NSURL* url in [openPanel URLs])
 			[filenames addObject:[[url filePathURL] path]];
 
-		OakOpenDocuments(filenames);
+		OakOpenDocuments(filenames, NO);
 	}
 }
 
 - (BOOL)application:(NSApplication*)theApplication openFile:(NSString*)aPath
 {
 	if(!DidHandleODBEditorEvent([[NSAppleEventManager.sharedAppleEventManager currentAppleEvent] aeDesc]))
-		OakOpenDocuments(@[ aPath ]);
+		OakOpenDocuments(@[ aPath ], NO);
 	return YES;
 }
 
 - (void)application:(NSApplication*)sender openFiles:(NSArray*)filenames
 {
 	if(!DidHandleODBEditorEvent([[NSAppleEventManager.sharedAppleEventManager currentAppleEvent] aeDesc]))
-		OakOpenDocuments(filenames);
+		OakOpenDocuments(filenames, NO);
 	[sender replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
 }
 

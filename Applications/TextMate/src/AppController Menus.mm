@@ -1,4 +1,4 @@
-#import "AppController.h"
+#import "AppController+Private.h"
 #import <oak/oak.h>
 #import <text/ctype.h>
 #import <text/parse.h>

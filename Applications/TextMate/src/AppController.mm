@@ -1,4 +1,4 @@
-#import "AppController.h"
+#import "AppController+Private.h"
 #import "OakMainMenu.h"
 #import "Favorites.h"
 #import "TMPlugInController.h"
@@ -27,6 +27,7 @@
 #import <network/tbz.h>
 #import <ns/ns.h>
 #import <settings/settings.h>
+#import <OakSystem/application.h>
 #import <oak/debug.h>
 #import <oak/oak.h>
 #import <text/types.h>
@@ -78,6 +79,31 @@ BOOL HasDocumentWindow (NSArray* windows)
 			return YES;
 	}
 	return NO;
+}
+
+static void increase_max_open_files (rlim_t required = 2048)
+{
+	struct rlimit limit;
+	if(getrlimit(RLIMIT_NOFILE, &limit) == -1)
+	{
+		perror("getrlimit()");
+		return;
+	}
+
+	if(limit.rlim_cur > required)
+		return;
+
+	rlim_t oldLimit = limit.rlim_cur;
+
+	limit.rlim_cur = MIN(OPEN_MAX, limit.rlim_max);
+	if(setrlimit(RLIMIT_NOFILE, &limit) == -1)
+	{
+		perror("setrlimit()");
+		return;
+	}
+
+	if(getrlimit(RLIMIT_NOFILE, &limit) == 0)
+		fprintf(stderr, "Increased maximum number of open files from %llu to %llu\n", oldLimit, limit.rlim_cur);
 }
 
 @interface AppController () <OakUserDefaultsObserver>
@@ -432,6 +458,10 @@ BOOL HasDocumentWindow (NSArray* windows)
 
 - (void)applicationWillFinishLaunching:(NSNotification*)aNotification
 {
+	// C++ initialization moved from main.mm
+	oak::application_t::set_support(path::join(path::home(), "Library/Application Support/TextMate"));
+	increase_max_open_files();
+
 	if(NSMenu* menu = [self mainMenu])
 		NSApp.mainMenu = menu;
 

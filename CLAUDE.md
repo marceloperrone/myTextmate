@@ -46,6 +46,7 @@ All located in `Frameworks/TextMateUI/`:
 | **Document** | `DocumentModel.swift` | Integrated — reactive mirror of OakDocument/OakTextView state |
 | **Bridge** | `SettingsStore.swift`, `HostingSupport.swift` | Shared infrastructure |
 | **ObjC Bridge** | `TextMateBridge/` (`SettingsBridge.mm`, `BundlesBridge.mm`) | SPM stubs return mock data for previews; rave build uses real C++ implementations in `Frameworks/TextMateBridge/src/` |
+| **App Entry** | `TextMateApp.swift` (in `Applications/TextMate/src/`) | `@main` struct with `@NSApplicationDelegateAdaptor(AppController.self)`, signal handling |
 
 **Swift Package**: `Frameworks/TextMateUI/Package.swift` — Swift 5.9, macOS 26+, two targets: `TextMateBridge` (ObjC++) and `TextMateUI` (Swift).
 
@@ -84,8 +85,8 @@ All located in `Frameworks/TextMateUI/`:
 
 | Framework/File | Purpose | Modernization Status |
 |----------------|---------|---------------------|
-| `DocumentWindowController.mm` (1,500+ lines) | Main window orchestration | Partially modernized — delegates to SwiftUI models |
-| `AppController.mm` (809 lines) | App lifecycle, menus | Legacy — needs modernization |
+| `DocumentWindowController.mm` (~1,600 lines + 10 category files) | Main window orchestration | Partially modernized — delegates to SwiftUI models, split into categories |
+| `AppController.mm` (~830 lines) | App lifecycle, menus | Partially modernized — `@NSApplicationDelegateAdaptor` via `TextMateApp.swift` |
 | `OakTextView/` | Core text editing NSView | Legacy — keep as-is (tightly coupled to C++ engine) |
 | `OakDocument` | Document model wrapper | Legacy — keep as-is (bridges to ng::buffer_t) |
 | `OakAppKit/` | AppKit utilities, extensions | Legacy — gradual replacement |
@@ -105,6 +106,8 @@ All located in `Frameworks/TextMateUI/`:
 - `OTVStatusBar` — Old AppKit status bar
 - Legacy Preferences panes (Terminal, Variables, SoftwareUpdate)
 - `Shared/include/oak/sdk-compat.h` — Compatibility shims for macOS 10.13/10.14/11.0 (removed in Phase 0)
+- `Applications/TextMate/src/main.mm` — C++ entry point, replaced by `@main` Swift `TextMateApp` struct (Phase 3)
+- `Applications/TextMate/resources/English.lproj/MainMenu.xib` — Only contained delegate wiring + stale GoToLine panel (Phase 3)
 
 ---
 
@@ -241,16 +244,21 @@ bin/                 Build scripts (rave)
 - [x] **Go To Line** — removed from menus and AppController (IBOutlets, actions, menu validation all deleted). Feature removed.
 - [x] **Symbol Chooser** — removed from OakDocumentView (import, property, setter, actions, delegate callbacks all deleted). Status bar symbol dropdown (`SymbolPopUpView`) still available in SwiftUI StatusBar.
 
-### Phase 3: Reduce ObjC++ Coordination Layer — PARTIALLY STARTED
+### Phase 3: Reduce ObjC++ Coordination Layer — NEARLY COMPLETE
 
-- [x] **Split DocumentWindowController** — reduced from 2,619 to 2,034 lines by extracting self-contained sections into ObjC++ category files:
+- [x] **Split DocumentWindowController** — reduced from 2,619 to ~1,600 lines by extracting self-contained sections into ObjC++ category files:
   - `DocumentWindowController+Private.h` — shared class extension, static helpers (`AllControllers`, `SortedControllers`, `is_disposable`), internal method declarations
   - `DocumentWindowController+TouchBar.mm` (~100 lines) — Touch Bar creation, item factory, navigation control
   - `DocumentWindowController+Session.mm` (~229 lines) — `+initialize`, session backup timer, save/restore, `setupControllerForProject:`, `-variables`
   - `OakDocumentController+DocumentWindow.mm` (~248 lines) — window routing (`findOrCreateController`, `showDocument`, `showDocuments`, `showFileBrowserAtPath`), `+controllerForDocument:`, `-bringToFront`
+  - `DocumentWindowController+ScopeAttributes.mm` (~120 lines) — `updateExternalAttributes`, `setProjectPath:`, `setDocumentPath:`, `scopeAttributes`
+  - `DocumentWindowController+CloseUI.mm` (~80 lines) — `saveAlertForDocuments:`, `showCloseWarningUIForDocuments:completionHandler:`, `windowShouldClose:`
+  - `DocumentWindowController+TabContextMenu.mm` (~60 lines) — `tabBarModel:menuForIndex:` (context menu factory)
+  - `DocumentWindowController+MenuValidation.mm` (~60 lines) — `validateMenuItem:` (NSMenuValidation)
+  - `DocumentWindowController+TabDragDrop.mm` (~50 lines) — `performDropOfTabItem:atIndex:operation:`, `selectNextTab:`, `selectPreviousTab:`, `takeSelectedTabIndexFrom:`
+  - `DocumentWindowController+ShowTabsMenu.mm` (~45 lines) — `updateShowTabMenu:` (Window > Show Tab submenu delegate)
 - [x] **Consolidate StatusBarViewModel into DocumentModel** — removed 6 duplicate stored properties (`selectionString`, `symbolName`, `fileType`, `grammarName`, `tabSize`, `softTabs`) from StatusBarViewModel. It now holds a `documentModel` reference and reads via computed properties. OakDocumentView.mm pushes state to DocumentModel only, eliminating duplicate KVC pushes.
-- [ ] **Further slim DocumentWindowController** — remaining ~2,034 lines still large. Future candidates: window title/scope logic, document I/O, tab context menu. Goal: extract to Swift models (TabBarController, DocumentIOCoordinator) to reduce to ~1,200 line thin shell.
-- [ ] **AppController → SwiftUI App lifecycle** — still traditional `NSApplicationDelegate` (809 lines), entry point is `NSApplicationMain()` in `main.mm`. No `@main struct` exists. Major change requiring careful evaluation.
+- [x] **AppController → @main SwiftUI App** — replaced `NSApplicationMain()` + `MainMenu.xib` with Swift `@main` `TextMateApp` struct using `@NSApplicationDelegateAdaptor(AppController.self)`. Signal handlers (SIGINT/SIGTERM) moved to Swift `DispatchSource`. C++ init (`oak::application_t::set_support`, `increase_max_open_files`) moved to `applicationWillFinishLaunching:`. XIB deleted (only contained delegate wiring + stale GoToLine panel). `AppController.h` cleaned for Swift import (C++ ivars moved to `AppController+Private.h`).
 - [ ] **Menu system** — entirely MenuBuilder (ObjC++). No SwiftUI `CommandMenu`/`Commands`. MenuBuilder is well-suited for dynamic bundle menus and may intentionally stay as-is.
 
 
@@ -290,12 +298,19 @@ bin/                 Build scripts (rave)
 
 | File | Lines | Role |
 |------|-------|------|
-| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | ~2034 | Main window orchestration hub |
-| `Frameworks/DocumentWindow/src/DocumentWindowController+Private.h` | 93 | Private class extension, shared helpers |
+| `Frameworks/DocumentWindow/src/DocumentWindowController.mm` | ~1600 | Main window orchestration hub |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+Private.h` | ~120 | Private class extension, shared helpers |
 | `Frameworks/DocumentWindow/src/DocumentWindowController+TouchBar.mm` | 100 | Touch Bar support |
 | `Frameworks/DocumentWindow/src/DocumentWindowController+Session.mm` | 229 | Session save/restore, environment variables |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+ScopeAttributes.mm` | ~120 | Scope attribute discovery and setters |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+CloseUI.mm` | ~80 | Close warning dialogs, windowShouldClose |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+TabContextMenu.mm` | ~60 | Tab right-click context menu |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+MenuValidation.mm` | ~60 | NSMenuValidation |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+TabDragDrop.mm` | ~50 | Tab drag-drop and navigation |
+| `Frameworks/DocumentWindow/src/DocumentWindowController+ShowTabsMenu.mm` | ~45 | Window > Show Tab submenu |
 | `Frameworks/DocumentWindow/src/OakDocumentController+DocumentWindow.mm` | 248 | Window routing, document controller category |
-| `Applications/TextMate/src/AppController.mm` | 809 | App delegate, menus, lifecycle |
+| `Applications/TextMate/src/TextMateApp.swift` | ~65 | @main entry point, signal handling |
+| `Applications/TextMate/src/AppController.mm` | ~830 | App delegate, menus, lifecycle |
 | `Frameworks/OakTextView/src/OakTextView.mm` | Large | Core text editor view |
 | `Frameworks/OakTextView/src/OakDocumentView.mm` | — | Wraps OakTextView + status bar |
 | `Frameworks/editor/src/editor.cc` | 66KB | All editing operations |

@@ -37,6 +37,10 @@ extern NSUInteger DisableSessionSavingCount;
 	std::vector<std::string>               _externalScopeAttributes; // attr.project.ninja
 
 	std::vector<std::string>               _documentScopeAttributes; // attr.os-version, attr.untitled / attr.rev-path + kSettingsScopeAttributesKey
+
+	// Explicit ivar declarations so category files can access them
+	NSString*                              _projectPath;
+	NSString*                              _documentPath;
 }
 @property (nonatomic) NSTitlebarAccessoryViewController* titlebarViewController;
 @property (nonatomic) ProjectLayoutView*          layoutView;
@@ -78,6 +82,10 @@ extern NSUInteger DisableSessionSavingCount;
 - (void)setDocument:(OakDocument*)aDocument sticky:(BOOL)stickyFlag;
 - (NSUUID*)disposableDocument;
 - (id)fileBrowser;
+- (void)saveProjectState;
+- (void)saveDocumentsUsingEnumerator:(NSEnumerator*)anEnumerator completionHandler:(void(^)(OakDocumentIOResult result))callback;
+- (NSIndexSet*)tryObtainIndexSetFrom:(id)sender;
+- (void)updateWindowTitle;
 
 // Methods in DocumentWindowController+TouchBar.mm
 - (void)updateTouchBarButtons;
@@ -90,4 +98,21 @@ extern NSUInteger DisableSessionSavingCount;
 
 // Methods in OakDocumentController+DocumentWindow.mm
 - (void)bringToFront;
+
+// Methods in DocumentWindowController+ScopeAttributes.mm
+- (void)updateExternalAttributes;
+- (NSString*)scopeAttributes;
+
+// Methods in DocumentWindowController+CloseUI.mm
++ (NSAlert*)saveAlertForDocuments:(NSArray<OakDocument*>*)someDocuments;
+- (void)showCloseWarningUIForDocuments:(NSArray<OakDocument*>*)someDocuments completionHandler:(void(^)(BOOL canClose))callback;
+
+// Methods in DocumentWindowController+TabContextMenu.mm
+- (NSMenu*)tabBarModel:(id)model menuForIndex:(NSNumber*)indexNumber;
+
+// Methods in DocumentWindowController+TabDragDrop.mm
+- (BOOL)performDropOfTabItem:(NSUUID*)tabItemUUID atIndex:(NSUInteger)droppedIndex operation:(NSDragOperation)operation;
+
+// Methods in DocumentWindowController+ShowTabsMenu.mm
+- (void)updateShowTabMenu:(NSMenu*)aMenu;
 @end
