@@ -621,19 +621,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 	[find showWindow:self];
 }
 
-- (IBAction)orderFrontGoToLinePanel:(id)sender;
-{
-	if(id textView = [NSApp targetForAction:@selector(selectionString)])
-		[goToLineTextField setStringValue:[textView selectionString]];
-	[goToLinePanel makeKeyAndOrderFront:self];
-}
-
-- (IBAction)performGoToLine:(id)sender
-{
-	[goToLinePanel orderOut:self];
-	[NSApp sendAction:@selector(selectAndCenter:) to:nil from:[goToLineTextField stringValue]];
-}
-
 - (IBAction)showPreferences:(id)sender
 {
 	Class Cls = NSClassFromString(@"SettingsWindowController");
@@ -727,10 +714,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 		{
 			enabled = NO;
 		}
-	}
-	else if([item action] == @selector(orderFrontGoToLinePanel:))
-	{
-		enabled = [NSApp targetForAction:@selector(setSelectionString:)] != nil;
 	}
 	else if([item action] == @selector(performBundleItemWithUUIDStringFrom:))
 	{

@@ -235,9 +235,10 @@ bin/                 Build scripts (rave)
 
 - [x] **Find & Replace (inline)** — SwiftUI `FindBarModel` + `FindBarView` with glass effect, integrated in `OakDocumentView` via `NSClassFromString`. Supports find/replace fields, match counter, regex/case/wrap options, prev/next navigation, replace one/all.
 - [ ] **Find & Replace (project search)** — floating Find panel (`Find/` framework: `Find.mm`, `FFResultsViewController`, etc.) still legacy AppKit. Handles folder/project/open-files search with results tree view.
-- [ ] **Open Quickly** — `OakFilterList/` (~2,500 lines) fully legacy AppKit. `FileChooser.mm`, `SymbolChooser.mm`, `BundleItemChooser.mm` all still active.
+- [x] **Open Quickly** — removed from menus; FileChooser import removed from DocumentWindowController. `OakFilterList/` framework still present (SymbolChooser and BundleItemChooser still active).
 - [ ] **Bundle Editor** — `BundleEditor.mm` (1,051 lines) still pure AppKit with NSBrowser + OakDocumentView + PropertiesViewController.
-- [ ] **Go To Line/Symbol** — Go To Line is a legacy NSPanel in AppController. Symbol chooser is legacy `SymbolChooser.mm`. Status bar symbol dropdown is SwiftUI (`SymbolPopUpView`) but wraps NSPopUpButton and calls back into ObjC.
+- [x] **Go To Line** — removed from menus and AppController (IBOutlets, actions, menu validation all deleted). Feature removed.
+- [ ] **Symbol Chooser** — `SymbolChooser.mm` still legacy AppKit, used by `OakDocumentView.showSymbolChooser:`. Status bar symbol dropdown is SwiftUI (`SymbolPopUpView`) but wraps NSPopUpButton and calls back into ObjC.
 
 ### Phase 3: Reduce ObjC++ Coordination Layer — NOT STARTED
 
@@ -245,11 +246,11 @@ bin/                 Build scripts (rave)
 - [ ] **AppController → SwiftUI App lifecycle** — still traditional `NSApplicationDelegate` (809 lines), entry point is `NSApplicationMain()` in `main.mm`. No `@main struct` exists. Major change requiring careful evaluation.
 - [ ] **Menu system** — entirely MenuBuilder (ObjC++). No SwiftUI `CommandMenu`/`Commands`. MenuBuilder is well-suited for dynamic bundle menus and may intentionally stay as-is.
 
-### Phase 4: Editor View Integration
+### Phase 4: Editor View Integration — NOT STARTED
 
-- [ ] **OakTextView wrapper** — create `NSViewRepresentable` wrapper so OakTextView can participate in SwiftUI layouts directly
-- [ ] **Document model** — consider Swift wrapper around `OakDocument` with `@Observable` for reactive document state
-- [ ] **GutterView** — was removed; rebuild as SwiftUI overlay or reintegrate as native component
+- [ ] **OakTextView wrapper** — currently embedded via generic `AppKitViewRepresentable` (any NSView). Needs a specialized `NSViewRepresentable` with proper bindings for editor state, selection, theme, etc.
+- [ ] **Document model** — `OakDocument` is pure ObjC++; Swift models receive data via KVC push. Needs `@Observable` Swift wrapper to enable reactive SwiftUI document state.
+- [ ] **GutterView** — `GutterView.h/.mm` (573 lines) still exists in `OakTextView/` but functionally disabled in `OakDocumentView.mm` ("stripped for Tahoe compatibility"). Needs SwiftUI rebuild or reintegration.
 
 ### Phase 5: Cleanup
 

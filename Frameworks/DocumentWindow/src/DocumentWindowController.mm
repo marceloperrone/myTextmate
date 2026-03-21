@@ -31,7 +31,6 @@
 - (NSURL*)createFolder:(id)sender;
 @end
 #import <OakCommand/OakCommand.h>
-#import <OakFilterList/FileChooser.h>
 #import <OakSystem/application.h>
 #import <Find/Find.h>
 #import <BundlesManager/BundlesManager.h>

@@ -5,9 +5,6 @@
 	NSMenu* spellingMenu;
 	NSMenu* wrapColumnMenu;
 
-	IBOutlet NSPanel* goToLinePanel;
-	IBOutlet NSTextField* goToLineTextField;
-
 	struct
 	{
 		std::string filter_string;
@@ -18,9 +15,6 @@
 }
 
 - (IBAction)orderFrontFindPanel:(id)sender;
-
-- (IBAction)orderFrontGoToLinePanel:(id)sender;
-- (IBAction)performGoToLine:(id)sender;
 
 - (IBAction)showBundleItemChooser:(id)sender;
 
