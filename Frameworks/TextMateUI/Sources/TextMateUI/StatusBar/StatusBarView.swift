@@ -33,7 +33,10 @@ public struct StatusBarView: View {
 
 				SymbolPopUpView(
 					model: model,
-					title: model.symbolName.isEmpty ? "Symbols" : model.symbolName
+					title: {
+						let name = model.documentModel?.symbolName ?? ""
+						return name.isEmpty ? "Symbols" : name
+					}()
 				)
 				.frame(minWidth: 50, maxWidth: .infinity)
 
@@ -75,7 +78,10 @@ public struct StatusBarView: View {
 				Text("No Grammars Loaded")
 			}
 		} label: {
-			Text(model.grammarName.isEmpty ? "(no grammar)" : model.grammarName)
+			Text({
+					let name = model.documentModel?.grammarName ?? ""
+					return name.isEmpty ? "(no grammar)" : name
+				}())
 				.statusBarFont()
 				.foregroundStyle(.secondary)
 				.lineLimit(1)

@@ -90,12 +90,13 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		textScrollView.borderType                        = NSNoBorder;
 		textScrollView.documentView                      = _textView;
 
+		_documentModel = [[NSClassFromString(@"DocumentModel") alloc] init];
+
 		statusBarModel = [[NSClassFromString(@"StatusBarViewModel") alloc] init];
 		[statusBarModel setValue:self forKey:@"delegate"];
 		[statusBarModel setValue:self forKey:@"target"];
+		[statusBarModel setValue:_documentModel forKey:@"documentModel"];
 		_statusBar = [statusBarModel valueForKey:@"hostingView"];
-
-		_documentModel = [[NSClassFromString(@"DocumentModel") alloc] init];
 
 		OakAddAutoLayoutViewsToSuperview(@[ textScrollView, _statusBar ], self);
 		OakSetupKeyViewLoop(@[ self, _textView, _statusBar ]);
@@ -157,22 +158,10 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 		statusBarModel = [[NSClassFromString(@"StatusBarViewModel") alloc] init];
 		[statusBarModel setValue:self forKey:@"delegate"];
 		[statusBarModel setValue:self forKey:@"target"];
+		[statusBarModel setValue:_documentModel forKey:@"documentModel"];
 		_statusBar = [statusBarModel valueForKey:@"hostingView"];
 
 		OakAddAutoLayoutViewsToSuperview(@[ _statusBar ], self);
-
-		// Restore current property values
-		[statusBarModel setValue:[_textView valueForKey:@"selectionString"] forKey:@"selectionString"];
-		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
-		if(self.document)
-		{
-			NSString* fileType = self.document.fileType;
-			[statusBarModel setValue:fileType forKey:@"fileType"];
-			for(auto const& item : bundles::query(bundles::kFieldGrammarScope, to_s(fileType)))
-				[statusBarModel setValue:[NSString stringWithCxxString:item->name()] forKey:@"grammarName"];
-			[statusBarModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
-			[statusBarModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
-		}
 	}
 	[self setNeedsUpdateConstraints:YES];
 }
@@ -214,35 +203,25 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 {
 	if([aKeyPath isEqualToString:@"selectionString"])
 	{
-		NSString* str = [_textView valueForKey:@"selectionString"];
-		[statusBarModel setValue:str forKey:@"selectionString"];
-		[_documentModel setValue:str forKey:@"selectionString"];
+		[_documentModel setValue:[_textView valueForKey:@"selectionString"] forKey:@"selectionString"];
 	}
 	else if([aKeyPath isEqualToString:@"symbol"])
 	{
-		[statusBarModel setValue:_textView.symbol forKey:@"symbolName"];
 		[_documentModel setValue:_textView.symbol forKey:@"symbolName"];
 	}
 	else if([aKeyPath isEqualToString:@"fileType"])
 	{
 		NSString* fileType = self.document.fileType;
-		[statusBarModel setValue:fileType forKey:@"fileType"];
 		[_documentModel setValue:fileType forKey:@"fileType"];
 		for(auto const& item : bundles::query(bundles::kFieldGrammarScope, to_s(fileType)))
-		{
-			NSString* name = [NSString stringWithCxxString:item->name()];
-			[statusBarModel setValue:name forKey:@"grammarName"];
-			[_documentModel setValue:name forKey:@"grammarName"];
-		}
+			[_documentModel setValue:[NSString stringWithCxxString:item->name()] forKey:@"grammarName"];
 	}
 	else if([aKeyPath isEqualToString:@"tabSize"])
 	{
-		[statusBarModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
 		[_documentModel setValue:@(self.document.tabSize) forKey:@"tabSize"];
 	}
 	else if([aKeyPath isEqualToString:@"softTabs"])
 	{
-		[statusBarModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
 		[_documentModel setValue:@(self.document.softTabs) forKey:@"softTabs"];
 	}
 	else if([aKeyPath isEqualToString:@"themeUUID"])

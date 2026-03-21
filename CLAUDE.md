@@ -36,7 +36,7 @@ All located in `Frameworks/TextMateUI/`:
 | Component | Files | Status |
 |-----------|-------|--------|
 | **TabBar** | `TabBarModel.swift`, `TabBarView.swift`, `TabBarLayout.swift` | Integrated — lives in titlebar accessory |
-| **StatusBar** | `StatusBarViewModel.swift`, `StatusBarView.swift` | Integrated — replaces OTVStatusBar |
+| **StatusBar** | `StatusBarViewModel.swift`, `StatusBarView.swift` | Integrated — reads editor state from DocumentModel |
 | **FileBrowser** | `FileTreeModel.swift`, `FileBrowserView.swift`, `FileItemRow.swift`, `NavigationModel.swift`, `FileBrowserHeaderView.swift` | Integrated — NavigationSplitView sidebar |
 | **Document Split** | `DocumentSplitModel.swift`, `DocumentSplitView.swift` | Integrated — top-level container |
 | **Preferences** | `SettingsWindow.swift`, `FilesSettingsView.swift`, `ProjectsSettingsView.swift`, `BundlesSettingsView.swift` | Integrated — replaces AppKit prefs panes |
@@ -248,6 +248,7 @@ bin/                 Build scripts (rave)
   - `DocumentWindowController+TouchBar.mm` (~100 lines) — Touch Bar creation, item factory, navigation control
   - `DocumentWindowController+Session.mm` (~229 lines) — `+initialize`, session backup timer, save/restore, `setupControllerForProject:`, `-variables`
   - `OakDocumentController+DocumentWindow.mm` (~248 lines) — window routing (`findOrCreateController`, `showDocument`, `showDocuments`, `showFileBrowserAtPath`), `+controllerForDocument:`, `-bringToFront`
+- [x] **Consolidate StatusBarViewModel into DocumentModel** — removed 6 duplicate stored properties (`selectionString`, `symbolName`, `fileType`, `grammarName`, `tabSize`, `softTabs`) from StatusBarViewModel. It now holds a `documentModel` reference and reads via computed properties. OakDocumentView.mm pushes state to DocumentModel only, eliminating duplicate KVC pushes.
 - [ ] **Further slim DocumentWindowController** — remaining ~2,034 lines still large. Future candidates: window title/scope logic, document I/O, tab context menu. Goal: extract to Swift models (TabBarController, DocumentIOCoordinator) to reduce to ~1,200 line thin shell.
 - [ ] **AppController → SwiftUI App lifecycle** — still traditional `NSApplicationDelegate` (809 lines), entry point is `NSApplicationMain()` in `main.mm`. No `@main struct` exists. Major change requiring careful evaluation.
 - [ ] **Menu system** — entirely MenuBuilder (ObjC++). No SwiftUI `CommandMenu`/`Commands`. MenuBuilder is well-suited for dynamic bundle menus and may intentionally stay as-is.
@@ -256,7 +257,7 @@ bin/                 Build scripts (rave)
 ### Phase 4: Editor View Integration — PARTIALLY STARTED
 
 - [ ] **OakTextView wrapper** — currently embedded via generic `AppKitViewRepresentable` (any NSView). Needs a specialized `NSViewRepresentable` with proper bindings for editor state, selection, theme, etc. Partially addressed: reactive editor state is now exposed via `DocumentModel`.
-- [x] **Document model** — `DocumentModel.swift` (`@MainActor @Observable @objc(DocumentModel)`) mirrors OakDocument/OakTextView state. OakDocumentView.mm instantiates via `NSClassFromString` and pushes editor state (selection, symbol, fileType, grammar, tabSize, softTabs, themeUUID) in parallel with StatusBarViewModel. DocumentWindowController.mm pushes document-level state (path, displayName, identifier, isDocumentEdited, isOnDisk) on document switch and KVO changes. Purely additive — no existing behavior changed.
+- [x] **Document model** — `DocumentModel.swift` (`@MainActor @Observable @objc(DocumentModel)`) is the single source of truth for editor state. OakDocumentView.mm instantiates via `NSClassFromString` and pushes editor state (selection, symbol, fileType, grammar, tabSize, softTabs, themeUUID) to DocumentModel only. StatusBarViewModel holds a `documentModel` reference and reads from it via computed properties — no duplicate KVC pushes. DocumentWindowController.mm pushes document-level state (path, displayName, identifier, isDocumentEdited, isOnDisk) on document switch and KVO changes.
 - [ ] **GutterView** — `GutterView.h/.mm` (573 lines) still exists in `OakTextView/` but functionally disabled in `OakDocumentView.mm` ("stripped for Tahoe compatibility"). Needs SwiftUI rebuild or reintegration.
   
   

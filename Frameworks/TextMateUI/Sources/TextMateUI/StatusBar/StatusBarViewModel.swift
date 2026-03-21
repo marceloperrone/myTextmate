@@ -4,12 +4,11 @@ import SwiftUI
 @objc(StatusBarViewModel)
 @Observable
 public final class StatusBarViewModel: NSObject {
-	@objc public var selectionString: String = "1:1"
-	@objc public var grammarName: String = ""
-	@objc public var symbolName: String = ""
-	@objc public var fileType: String = ""
-	@objc public var tabSize: Int = 4
-	@objc public var softTabs: Bool = false
+	/// Reference to the single-source-of-truth document model.
+	/// Set from ObjC via KVC: `[statusBarModel setValue:_documentModel forKey:@"documentModel"]`
+	@ObservationIgnored
+	@objc public var documentModel: DocumentModel?
+
 	@ObservationIgnored
 	@objc public weak var delegate: AnyObject?
 
@@ -30,14 +29,14 @@ public final class StatusBarViewModel: NSObject {
 	// MARK: - Computed Display Properties
 
 	public var formattedSelection: String {
-		selectionString
+		(documentModel?.selectionString ?? "")
 			.replacingOccurrences(of: "&", with: ", ")
 			.replacingOccurrences(of: "x", with: "\u{00D7}")
 	}
 
 	public var tabSizeDisplay: String {
-		let label = softTabs ? "Soft Tabs" : "Tab Size"
-		return "\(label):\u{2003}\(tabSize)"
+		let label = (documentModel?.softTabs ?? false) ? "Soft Tabs" : "Tab Size"
+		return "\(label):\u{2003}\(documentModel?.tabSize ?? 4)"
 	}
 
 	/// Fresh grammar list queried from the C++ bundles engine via BundlesBridge.
