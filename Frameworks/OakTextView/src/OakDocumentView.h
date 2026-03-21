@@ -15,5 +15,4 @@
 - (void)hideFindBar;
 @property (nonatomic, readonly) BOOL isFindBarVisible;
 
-- (IBAction)showSymbolChooser:(id)sender;
 @end

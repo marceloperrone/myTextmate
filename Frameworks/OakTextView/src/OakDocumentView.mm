@@ -11,7 +11,6 @@
 #import <oak/debug.h>
 #import <bundles/bundles.h>
 #import <settings/settings.h>
-#import <OakFilterList/SymbolChooser.h>
 #import <OakFoundation/NSString Additions.h>
 #import <OakAppKit/OakAppKit.h>
 #import <OakAppKit/NSImage Additions.h>
@@ -65,7 +64,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	IBOutlet NSPanel* tabSizeSelectorPanel;
 }
 @property (nonatomic, readonly) NSView* statusBar;
-@property (nonatomic) SymbolChooser* symbolChooser;
 @property (nonatomic) NSArray* observedKeys;
 - (void)updateStyle;
 @end
@@ -213,7 +211,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	{
 		NSString* str = [_textView valueForKey:@"selectionString"];
 		[statusBarModel setValue:str forKey:@"selectionString"];
-		_symbolChooser.selectionString = str;
 	}
 	else if([aKeyPath isEqualToString:@"symbol"])
 	{
@@ -247,7 +244,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	[NSNotificationCenter.defaultCenter removeObserver:self];
 
 	self.document = nil;
-	self.symbolChooser = nil;
 }
 
 - (void)setDocument:(OakDocument*)aDocument
@@ -274,12 +270,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 
 	[_textView setDocument:self.document];
 	[self updateStyle];
-
-	if(_symbolChooser)
-	{
-		_symbolChooser.TMDocument      = self.document;
-		_symbolChooser.selectionString = _textView.selectionString;
-	}
 
 	if(oldDocument)
 		[oldDocument close];
@@ -564,48 +554,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 {
 	_textView.selectionString = aSelectionString;
 	[_textView centerSelectionInVisibleArea:self];
-}
-
-- (void)setSymbolChooser:(SymbolChooser*)aSymbolChooser
-{
-	if(_symbolChooser == aSymbolChooser)
-		return;
-
-	if(_symbolChooser)
-	{
-		[NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillCloseNotification object:_symbolChooser.window];
-
-		_symbolChooser.target     = nil;
-		_symbolChooser.TMDocument = nil;
-	}
-
-	if(_symbolChooser = aSymbolChooser)
-	{
-		_symbolChooser.target          = self;
-		_symbolChooser.action          = @selector(symbolChooserDidSelectItems:);
-		_symbolChooser.filterString    = @"";
-		_symbolChooser.TMDocument      = self.document;
-		_symbolChooser.selectionString = _textView.selectionString;
-
-		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(symbolChooserWillClose:) name:NSWindowWillCloseNotification object:_symbolChooser.window];
-	}
-}
-
-- (void)symbolChooserWillClose:(NSNotification*)aNotification
-{
-	self.symbolChooser = nil;
-}
-
-- (IBAction)showSymbolChooser:(id)sender
-{
-	self.symbolChooser = SymbolChooser.sharedInstance;
-	[self.symbolChooser showWindowRelativeToFrame:[self.window convertRectToScreen:[_textView convertRect:[_textView visibleRect] toView:nil]]];
-}
-
-- (void)symbolChooserDidSelectItems:(id)sender
-{
-	for(id item in [sender selectedItems])
-		[self selectAndCenter:[item selectionString]];
 }
 
 // =======================

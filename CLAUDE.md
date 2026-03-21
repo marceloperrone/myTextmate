@@ -235,10 +235,10 @@ bin/                 Build scripts (rave)
 
 - [x] **Find & Replace (inline)** — SwiftUI `FindBarModel` + `FindBarView` with glass effect, integrated in `OakDocumentView` via `NSClassFromString`. Supports find/replace fields, match counter, regex/case/wrap options, prev/next navigation, replace one/all.
 - [ ] **Find & Replace (project search)** — floating Find panel (`Find/` framework: `Find.mm`, `FFResultsViewController`, etc.) still legacy AppKit. Handles folder/project/open-files search with results tree view.
-- [x] **Open Quickly** — removed from menus; FileChooser import removed from DocumentWindowController. `OakFilterList/` framework still present (SymbolChooser and BundleItemChooser still active).
+- [x] **Open Quickly** — removed from menus; FileChooser import removed from DocumentWindowController. `OakFilterList/` framework still present (BundleItemChooser still active).
 - [ ] **Bundle Editor** — `BundleEditor.mm` (1,051 lines) still pure AppKit with NSBrowser + OakDocumentView + PropertiesViewController.
 - [x] **Go To Line** — removed from menus and AppController (IBOutlets, actions, menu validation all deleted). Feature removed.
-- [ ] **Symbol Chooser** — `SymbolChooser.mm` still legacy AppKit, used by `OakDocumentView.showSymbolChooser:`. Status bar symbol dropdown is SwiftUI (`SymbolPopUpView`) but wraps NSPopUpButton and calls back into ObjC.
+- [x] **Symbol Chooser** — removed from OakDocumentView (import, property, setter, actions, delegate callbacks all deleted). Status bar symbol dropdown (`SymbolPopUpView`) still available in SwiftUI StatusBar.
 
 ### Phase 3: Reduce ObjC++ Coordination Layer — NOT STARTED
 
