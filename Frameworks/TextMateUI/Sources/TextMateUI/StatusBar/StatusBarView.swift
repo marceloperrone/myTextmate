@@ -22,15 +22,6 @@ public struct StatusBarView: View {
 
 				statusDivider
 
-				tabSizeMenu
-
-				statusDivider
-
-				BundleItemsPopUpView(model: model)
-					.frame(width: 31)
-
-				statusDivider
-
 				SymbolPopUpView(
 					model: model,
 					title: {
@@ -91,40 +82,6 @@ public struct StatusBarView: View {
 		.accessibilityLabel("Grammar")
 	}
 
-	// MARK: - Tab Size Menu
-
-	private var tabSizeMenu: some View {
-		Menu {
-			Section("Indent Size") {
-				ForEach([2, 3, 4, 8], id: \.self) { size in
-					Button("\(size)") {
-						model.selectTabSize(size)
-					}
-				}
-				Button("Other\u{2026}") {
-					model.showTabSizePanel()
-				}
-			}
-
-			Divider()
-
-			Section("Indent Using") {
-				Button("Tabs") {
-					model.setIndentWithTabs()
-				}
-				Button("Spaces") {
-					model.setIndentWithSpaces()
-				}
-			}
-		} label: {
-			Text(model.tabSizeDisplay)
-				.statusBarFont()
-				.foregroundStyle(.secondary)
-				.lineLimit(1)
-		}
-		.menuStyle(.borderlessButton)
-	}
-
 	// MARK: - Divider
 
 	private var statusDivider: some View {
@@ -132,54 +89,6 @@ public struct StatusBarView: View {
 			.fill(.separator)
 			.frame(width: 1, height: 15)
 			.padding(.horizontal, 4)
-	}
-}
-
-// MARK: - Bundle Items PopUp (NSViewRepresentable)
-
-struct BundleItemsPopUpView: NSViewRepresentable {
-	let model: StatusBarViewModel
-
-	func makeNSView(context: Context) -> NSPopUpButton {
-		let popup = NSPopUpButton(frame: .zero, pullsDown: true)
-		popup.font = NSFont.systemFont(ofSize: 11)
-		popup.isBordered = false
-		popup.setAccessibilityLabel("Bundle Item")
-
-		let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-		item.image = NSImage(named: NSImage.actionTemplateName)
-		(popup.cell as? NSPopUpButtonCell)?.usesItemFromMenu = false
-		(popup.cell as? NSPopUpButtonCell)?.menuItem = item
-
-		model.bundleItemsPopUp = popup
-
-		NotificationCenter.default.addObserver(
-			context.coordinator,
-			selector: #selector(Coordinator.willPopUp(_:)),
-			name: NSPopUpButton.willPopUpNotification,
-			object: popup
-		)
-
-		return popup
-	}
-
-	func updateNSView(_ nsView: NSPopUpButton, context: Context) {}
-
-	func makeCoordinator() -> Coordinator {
-		Coordinator(model: model)
-	}
-
-	@MainActor class Coordinator: NSObject {
-		let model: StatusBarViewModel
-		init(model: StatusBarViewModel) { self.model = model }
-
-		@objc func willPopUp(_ notification: Notification) {
-			guard let popup = notification.object as? NSPopUpButton else { return }
-			let sel = NSSelectorFromString("showBundleItemSelector:")
-			if let d = model.delegate, d.responds(to: sel) {
-				_ = d.perform(sel, with: popup)
-			}
-		}
 	}
 }
 

@@ -601,51 +601,6 @@ static NSString* const kUserDefaultsLineNumberFontNameKey    = @"lineNumberFontN
 	[symbolPopUp selectItemAtIndex:(index ? index-1 : 0)];
 }
 
-- (void)showBundlesMenu:(id)sender
-{
-	NSPopUpButton* popup = [statusBarModel valueForKey:@"bundleItemsPopUp"];
-	if(popup)
-		[popup performClick:self];
-	else
-		NSBeep();
-}
-
-- (void)showBundleItemSelector:(NSPopUpButton*)bundleItemsPopUp
-{
-	NSMenu* bundleItemsMenu = bundleItemsPopUp.menu;
-	[bundleItemsMenu removeAllItems];
-
-	std::multimap<std::string, bundles::item_ptr, text::less_t> ordered;
-	for(auto item : bundles::query(bundles::kFieldAny, NULL_STR, scope::wildcard, bundles::kItemTypeBundle))
-		ordered.emplace(item->name(), item);
-
-	NSMenuItem* selectedItem = nil;
-	for(auto pair : ordered)
-	{
-		bool selectedGrammar = false;
-		for(auto item : bundles::query(bundles::kFieldGrammarScope, to_s(self.document.fileType), scope::wildcard, bundles::kItemTypeGrammar, pair.second->uuid(), true, true))
-			selectedGrammar = true;
-		if(!selectedGrammar && pair.second->hidden_from_user() || pair.second->menu().empty())
-			continue;
-
-		NSMenuItem* menuItem = [bundleItemsMenu addItemWithTitle:[NSString stringWithCxxString:pair.first] action:NULL keyEquivalent:@""];
-		menuItem.submenu = [[NSMenu alloc] initWithTitle:[NSString stringWithCxxString:pair.second->uuid()]];
-		menuItem.submenu.delegate = BundleMenuDelegate.sharedInstance;
-
-		if(selectedGrammar)
-		{
-			[menuItem setState:NSControlStateValueOn];
-			selectedItem = menuItem;
-		}
-	}
-
-	if(ordered.empty())
-		[bundleItemsMenu addItemWithTitle:@"No Bundles Loaded" action:@selector(nop:) keyEquivalent:@""];
-
-	if(selectedItem)
-		[bundleItemsPopUp selectItem:selectedItem];
-}
-
 - (NSUInteger)tabSize
 {
 	return _textView.tabSize;
