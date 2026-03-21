@@ -15,7 +15,6 @@ TM_APP_PATH          = "${CWD/\/Contents\/Resources$//}"
 TM_MATE              = "${TM_APP_PATH}/Contents/MacOS/mate"
 MATEFLAGS            = "--no-recent"
 TM_QUERY             = "${TM_APP_PATH}/Contents/MacOS/tm_query"
-TM_SCM_COMMIT_WINDOW = "${TM_APP_PATH}/Contents/MacOS/CommitWindowTool"
 TM_SUPPORT_PATH      = "${TM_APP_PATH}/Contents/SharedSupport"
 PATH                 = "${TM_APP_PATH}/Contents/SharedSupport/bin:${PATH}"
 

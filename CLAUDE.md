@@ -38,12 +38,13 @@ All located in `Frameworks/TextMateUI/`:
 | **TabBar** | `TabBarModel.swift`, `TabBarView.swift`, `TabBarLayout.swift` | Integrated — lives in titlebar accessory |
 | **StatusBar** | `StatusBarViewModel.swift`, `StatusBarView.swift` | Integrated — reads editor state from DocumentModel |
 | **FileBrowser** | `FileTreeModel.swift`, `FileBrowserView.swift`, `FileItemRow.swift`, `NavigationModel.swift`, `FileBrowserHeaderView.swift` | Integrated — NavigationSplitView sidebar |
-| **Document Split** | `DocumentSplitModel.swift`, `DocumentSplitView.swift` | Integrated — top-level container |
+| **Document Split** | `DocumentSplitModel.swift`, `DocumentSplitView.swift` | Integrated — top-level NavigationSplitView container, embeds OakDocumentView via EditorViewRepresentable |
 | **Preferences** | `SettingsWindow.swift`, `FilesSettingsView.swift`, `ProjectsSettingsView.swift`, `BundlesSettingsView.swift` | Integrated — replaces AppKit prefs panes |
 | **FindBar** | `FindBarModel.swift`, `FindBarView.swift` | Integrated — inline find/replace in OakDocumentView |
 | **FindPanel** | `FindPanelModel.swift`, `FindPanelView.swift` | Integrated — project/folder/open-files search panel |
 | **About** | `AboutWindowController.swift` | Integrated — replaces AppKit AboutWindowController |
 | **Document** | `DocumentModel.swift` | Integrated — reactive mirror of OakDocument/OakTextView state |
+| **Editor Wrapper** | `EditorViewRepresentable.swift` | Integrated — specialized NSViewRepresentable for OakDocumentView |
 | **Bridge** | `SettingsStore.swift`, `HostingSupport.swift` | Shared infrastructure |
 | **ObjC Bridge** | `TextMateBridge/` (`SettingsBridge.mm`, `BundlesBridge.mm`) | SPM stubs return mock data for previews; rave build uses real C++ implementations in `Frameworks/TextMateBridge/src/` |
 | **App Entry** | `TextMateApp.swift` (in `Applications/TextMate/src/`) | `@main` struct with `@NSApplicationDelegateAdaptor(AppController.self)`, signal handling |
@@ -96,7 +97,6 @@ All located in `Frameworks/TextMateUI/`:
 | `BundleEditor/` | Bundle editor window | Legacy — migration candidate |
 | `MenuBuilder/` | Dynamic menu construction | Legacy — keep (works well) |
 | `FileBrowser/` | ObjC file browser support code | Mostly replaced by SwiftUI |
-| `OakTabBarView/` | Legacy tab bar | Replaced by SwiftUI (kept for header refs) |
 
 ### Already Removed
 
@@ -108,6 +108,11 @@ All located in `Frameworks/TextMateUI/`:
 - `Shared/include/oak/sdk-compat.h` — Compatibility shims for macOS 10.13/10.14/11.0 (removed in Phase 0)
 - `Applications/TextMate/src/main.mm` — C++ entry point, replaced by `@main` Swift `TextMateApp` struct (Phase 3)
 - `Applications/TextMate/resources/English.lproj/MainMenu.xib` — Only contained delegate wiring + stale GoToLine panel (Phase 3)
+- `ProjectLayoutView` — Redundant NSView intermediary between SwiftUI wrapper and OakDocumentView, replaced by `EditorContainerView` in `EditorViewRepresentable.swift` (Phase 4)
+- `AppKitViewRepresentable` — Generic NSView wrapper in DocumentSplitView, replaced by specialized `EditorViewRepresentable` (Phase 4)
+- `CommitWindow/` — SCM commit window framework and CommitWindowTool CLI (Phase 5)
+- `OakTabBarView/` — Legacy AppKit tab bar, fully replaced by SwiftUI TabBarView (Phase 5)
+- AddressBook integration — Deprecated API usage in BundleEditor for `TM_ROT13_EMAIL` environment variable (Phase 5)
 
 ---
 
@@ -264,17 +269,17 @@ bin/                 Build scripts (rave)
 
 ### Phase 4: Editor View Integration — PARTIALLY STARTED
 
-- [ ] **OakTextView wrapper** — currently embedded via generic `AppKitViewRepresentable` (any NSView). Needs a specialized `NSViewRepresentable` with proper bindings for editor state, selection, theme, etc. Partially addressed: reactive editor state is now exposed via `DocumentModel`.
+- [x] **OakTextView wrapper** — `EditorViewRepresentable` (specialized `NSViewRepresentable`) + `EditorContainerView` (thin NSView with `performClose:` routing and `mouseDownCanMoveWindow`). Replaced generic `AppKitViewRepresentable` and removed redundant `ProjectLayoutView`. OakDocumentView is passed directly from DWC as `editorView`. Future work: add bindings for editor state, selection, theme.
 - [x] **Document model** — `DocumentModel.swift` (`@MainActor @Observable @objc(DocumentModel)`) is the single source of truth for editor state. OakDocumentView.mm instantiates via `NSClassFromString` and pushes editor state (selection, symbol, fileType, grammar, tabSize, softTabs, themeUUID) to DocumentModel only. StatusBarViewModel holds a `documentModel` reference and reads from it via computed properties — no duplicate KVC pushes. DocumentWindowController.mm pushes document-level state (path, displayName, identifier, isDocumentEdited, isOnDisk) on document switch and KVO changes.
 - [ ] **GutterView** — `GutterView.h/.mm` (573 lines) still exists in `OakTextView/` but functionally disabled in `OakDocumentView.mm` ("stripped for Tahoe compatibility"). Needs SwiftUI rebuild or reintegration.
   
   
-### Phase 5: Cleanup
+### Phase 5: Cleanup — MOSTLY COMPLETE
 
-- [ ] **Remove dead frameworks** — any remaining code for features that were stripped (SCM stubs, HTMLOutput refs)
-- [ ] **Consolidate OakAppKit** — move still-needed utilities to Swift extensions, retire the framework
-- [ ] **Remove OakTabBarView** — currently kept for header references only; fully decouple
-- [ ] **Entitlements audit** — review if all entitlements are still needed
+- [x] **Remove dead frameworks** — removed CommitWindow framework (SCM commit UI), SCM button from FileBrowser OFBActionsView, SCM URL scheme handling from FileBrowserViewController, SCM image resources, `TM_SCM_COMMIT_WINDOW` from Default.tmProperties, stale framework list from `.tm_properties`. HTMLOutput/RMateServer refs are test fixtures only (harmless). SCM settings keys (`kSettingsSCMStatusKey`, `kSettingsExcludeSCMDeletedKey`) kept in C++ settings engine since users may have them in `.tm_properties`.
+- [ ] **Consolidate OakAppKit** — audit found all files actively used (OakSound, OakToolTip, OakBorderlessPanel all have callers). Full retirement not feasible; framework stays as-is.
+- [x] **Remove OakTabBarView** — deleted framework directory, removed dead import from `Preferences/src/Keys.mm`, removed `require_headers` from `Preferences/default.rave`.
+- [x] **Entitlements audit** — removed `com.apple.security.personal-information.addressbook` (deprecated AddressBook API in BundleEditor for `TM_ROT13_EMAIL`), removed AddressBook framework dep from BundleEditor. Kept `disable-library-validation` (needed by TMPlugInController for `.tmplugin` loading), kept `automation.apple-events` (OakOpenWithMenu), kept `get-task-allow` (debug/release config).
 
 ### Things to KEEP as-is
 
@@ -317,6 +322,7 @@ bin/                 Build scripts (rave)
 | `Frameworks/buffer/src/buffer.cc` | 12KB | Text buffer implementation |
 | `Frameworks/document/src/OakDocument.h` | 131 | Document model interface |
 | `Frameworks/TextMateUI/Sources/TextMateUI/Document/DocumentModel.swift` | ~65 | Reactive document/editor state mirror |
+| `Frameworks/TextMateUI/Sources/TextMateUI/Document/EditorViewRepresentable.swift` | ~60 | NSViewRepresentable wrapper for OakDocumentView |
 | `Frameworks/TextMateUI/Sources/TextMateUI/` | ~25 files | All SwiftUI components |
 | `Frameworks/TextMateUI/Sources/TextMateBridge/` | — | C++ ↔ Swift bridge |
 | `default.rave` | 46 | Root build configuration |

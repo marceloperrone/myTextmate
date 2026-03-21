@@ -149,15 +149,12 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.textView = self.documentView.textView;
 		self.textView.delegate = self;
 
-		self.layoutView = [[ProjectLayoutView alloc] initWithFrame:NSZeroRect];
-		self.layoutView.documentView = self.documentView;
-
 		// Create DocumentSplitModel (NavigationSplitView container)
 		Class SplitModelClass = NSClassFromString(@"DocumentSplitModel");
 		self.splitModel = [[SplitModelClass alloc] init];
 		[self.splitModel setValue:self forKey:@"delegate"];
 		[[self.splitModel valueForKey:@"fileBrowser"] setValue:self forKey:@"delegate"];
-		[self.splitModel setValue:self.layoutView forKey:@"detailView"];
+		[self.splitModel setValue:self.documentView forKey:@"editorView"];
 
 		NSUInteger windowStyle = (NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskFullSizeContentView);
 		self.window = [[NSWindow alloc] initWithContentRect:[NSWindow contentRectForFrameRect:[self frameRectForNewWindow] styleMask:windowStyle] styleMask:windowStyle backing:NSBackingStoreBuffered defer:NO];

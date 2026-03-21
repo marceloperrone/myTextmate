@@ -1,5 +1,4 @@
 #import "Keys.h"
-#import <OakTabBarView/OakTabBarView.h>
 #import <BundlesManager/BundlesManager.h>
 
 static NSDictionary* default_settings ()

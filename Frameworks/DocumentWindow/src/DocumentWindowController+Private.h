@@ -1,5 +1,4 @@
 #import "DocumentWindowController.h"
-#import "ProjectLayoutView.h"
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <OakTextView/OakDocumentView.h>
@@ -43,7 +42,6 @@ extern NSUInteger DisableSessionSavingCount;
 	NSString*                              _documentPath;
 }
 @property (nonatomic) NSTitlebarAccessoryViewController* titlebarViewController;
-@property (nonatomic) ProjectLayoutView*          layoutView;
 @property (nonatomic) id                          tabBarModel;
 @property (nonatomic) id                          splitModel;
 @property (nonatomic) OakDocumentView*            documentView;

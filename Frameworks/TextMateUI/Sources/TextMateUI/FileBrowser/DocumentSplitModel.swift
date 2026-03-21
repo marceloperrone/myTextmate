@@ -34,11 +34,11 @@ public final class DocumentSplitModel: NSObject {
         set { sidebarVisibility = newValue ? .all : .detailOnly }
     }
 
-    // MARK: - Detail View (AppKit)
+    // MARK: - Editor View (AppKit)
 
-    /// The ProjectLayoutView (doc + html), set from ObjC via KVC.
+    /// The OakDocumentView, set from ObjC via KVC.
     @ObservationIgnored
-    @objc public var detailView: NSView?
+    @objc public var editorView: NSView?
 
     // MARK: - Hosting View
 

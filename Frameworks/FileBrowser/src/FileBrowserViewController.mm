@@ -1418,7 +1418,7 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 	{
 		NSURL* directoryURL = (parentOrNil ?: self.fileItem).URL;
 		settings_t const settings = settings_for_path(NULL_STR, "", directoryURL.fileSystemRepresentation);
-		bool excludeMissingFiles = [directoryURL.scheme isEqual:@"scm"] ? false : settings.get(kSettingsExcludeSCMDeletedKey, false);
+		bool excludeMissingFiles = settings.get(kSettingsExcludeSCMDeletedKey, false);
 
 		path::glob_list_t globs;
 		globs.add_exclude_glob(settings.get(kSettingsExcludeDirectoriesInBrowserKey), path::kPathItemDirectory);
@@ -1635,13 +1635,7 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 	else
 	{
 		NSImage* image;
-		if([url.scheme isEqualToString:@"scm"])
-		{
-			if([url.query hasSuffix:@"unstaged"] || [url.query hasSuffix:@"untracked"])
-					image = [NSWorkspace.sharedWorkspace iconForFileType:NSFileTypeForHFSTypeCode((OSType)kGenericFolderIcon)];
-			else	image = [NSImage imageNamed:@"SCMTemplate" inSameBundleAsClass:NSClassFromString(@"OakFileBrowser")];
-		}
-		else if([url.scheme isEqualToString:@"computer"])
+		if([url.scheme isEqualToString:@"computer"])
 		{
 			image = [NSImage imageNamed:NSImageNameComputer];
 		}
@@ -1790,7 +1784,7 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 
 		for(FileItem* child in item.arrangedChildren)
 		{
-			if((flag && !child.isSymbolicLink || [_expandedURLs containsObject:child.URL] || [child.URL.scheme isEqualToString:@"scm"]) && [self.outlineView isExpandable:child])
+			if((flag && !child.isSymbolicLink || [_expandedURLs containsObject:child.URL]) && [self.outlineView isExpandable:child])
 				[self.outlineView expandItem:child expandChildren:flag && !child.isSymbolicLink];
 
 			if([_selectedURLs containsObject:child.URL])
@@ -1985,7 +1979,7 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 	for(NSUInteger i = 0; i < self.outlineView.numberOfRows; ++i)
 	{
 		FileItem* item = [self.outlineView itemAtRow:i];
-		if([self.outlineView isItemExpanded:item] && ![item.URL.scheme isEqualToString:@"scm"])
+		if([self.outlineView isItemExpanded:item])
 				[res addObject:item.URL];
 		else	[res removeObject:item.URL];
 	}
@@ -2013,7 +2007,7 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 
 - (BOOL)outlineView:(NSOutlineView*)outlineView isGroupItem:(FileItem*)item
 {
-	return [item.URL.scheme isEqualToString:@"scm"];
+	return NO;
 }
 
 - (BOOL)outlineView:(NSOutlineView*)outlineView shouldSelectItem:(FileItem*)item

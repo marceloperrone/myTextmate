@@ -7,7 +7,6 @@
 #import <CrashReporter/CrashReporter.h>
 #import <DocumentWindow/DocumentWindowController.h>
 #import <Find/Find.h>
-#import <CommitWindow/CommitWindow.h>
 #import <OakAppKit/NSAlert Additions.h>
 #import <OakAppKit/NSMenuItem Additions.h>
 #import <OakAppKit/OakAppKit.h>
@@ -574,8 +573,6 @@ static void increase_max_open_files (rlim_t required = 2048)
 
 	[CrashReporter.sharedInstance applicationDidFinishLaunching:aNotification];
 	[CrashReporter.sharedInstance postNewCrashReportsToURLString:[NSString stringWithFormat:@"%s/crashes", REST_API]];
-
-	[OakCommitWindowServer sharedInstance]; // Setup server
 
 	self.didFinishLaunching = YES;
 }
